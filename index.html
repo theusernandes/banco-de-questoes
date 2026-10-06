@@ -39,6 +39,10 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .marca{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .marca h1{font-size:18px;font-weight:700;letter-spacing:-.01em}
 .marca h1 span{display:block;font-family:var(--sans);font-size:11px;font-weight:400;color:var(--cinza);margin-top:2px}
+.nuvem-chip{font:inherit;font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid var(--regua);background:var(--carta);color:var(--cinza);cursor:pointer}
+.nuvem-chip.ok{background:var(--verde-fundo);color:var(--verde-escuro);border-color:transparent}
+.nuvem-chip.enviando,.nuvem-chip.baixando,.nuvem-chip.carregando{background:var(--ambar-fundo);color:#7a5210;border-color:transparent}
+.nuvem-chip.erro,.nuvem-chip.semacesso{background:var(--vermelho-fundo);color:var(--vermelho);border-color:transparent}
 #resumo-topo{background:var(--verde-fundo);color:var(--verde-escuro);font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px}
 .abas{display:flex;gap:4px;overflow-x:auto}
 .aba{background:none;border:none;border-bottom:2px solid transparent;padding:10px 16px;cursor:pointer;
@@ -216,6 +220,7 @@ input[type=file]{font-size:13px}
       <h1>Banco de Questões<span>Ferramenta local para elaboração de avaliações</span></h1>
       <div style="display:flex;align-items:center;gap:14px">
         <span id="resumo-topo">nenhuma questão arquivada</span>
+        <button type="button" id="nuvem-chip" class="nuvem-chip desligada">☁ Nuvem</button>
         <span style="font-size:11.5px;color:var(--cinza)">versão de 6 out 2026</span>
       </div>
     </div>
@@ -664,6 +669,27 @@ input[type=file]{font-size:13px}
 </section>
 
 <section class="vista" id="vista-ajustes">
+  <div class="bloco" id="bloco-nuvem">
+    <h2>Nuvem compartilhada</h2>
+    <p class="ajuda">Com a nuvem ligada, as questões, as figuras, a biblioteca de materiais, as provas oficiais e os modelos ficam guardados no Google e aparecem para todos os professores liberados. Quem salvar, editar ou excluir algo muda para todos. A chave de acesso à IA continua só neste aparelho.</p>
+    <div id="nuvem-estado"></div>
+    <div class="botoes" style="margin-top:6px">
+      <button class="botao" id="btn-nuvem-entrar">Entrar com Google</button>
+      <button class="botao secundario" id="btn-nuvem-tentar" style="display:none">Tentar de novo</button>
+      <button class="botao secundario" id="btn-nuvem-sair" style="display:none">Sair da nuvem</button>
+    </div>
+    <div id="nuvem-membros" style="display:none;margin-top:14px">
+      <label for="novo-membro">Liberar um colega (e-mail da conta Google dele)</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="email" id="novo-membro" placeholder="colega@gmail.com" style="flex:1;min-width:220px">
+        <button class="botao" id="btn-liberar-membro">Liberar acesso</button>
+      </div>
+      <div id="retorno-membros"></div>
+      <p class="ajuda" style="margin:12px 0 4px">Professores com acesso:</p>
+      <ul id="lista-membros" style="margin:0;padding-left:20px;font-size:13.5px;line-height:2"></ul>
+    </div>
+  </div>
+
   <div class="bloco">
     <h2>Chave de acesso à IA</h2>
     <p class="ajuda">A chave fica salva apenas neste aparelho e é usada direto do navegador para o provedor. Não passa por nenhum servidor intermediário.</p>
@@ -766,8 +792,8 @@ function mostrarFalha(texto,onde){
 var CHAVE_BANCO="bancoQuestoes.v2", CHAVE_CONF="bancoQuestoes.conf.v1";
 var memoria={};
 function ler(k){try{var v=localStorage.getItem(k);return v!==null?v:(memoria[k]||null);}catch(e){return memoria[k]||null;}}
-function gravar(k,v){memoria[k]=v;try{localStorage.setItem(k,v);}catch(e){}}
-function apagar(k){delete memoria[k];try{localStorage.removeItem(k);}catch(e){}}
+function gravar(k,v){memoria[k]=v;try{localStorage.setItem(k,v);}catch(e){}if(k===CHAVE_MODELO||k===CHAVE_MODELO_PLANO)nuvemMudou();}
+function apagar(k){delete memoria[k];try{localStorage.removeItem(k);}catch(e){}if(k===CHAVE_MODELO||k===CHAVE_MODELO_PLANO)nuvemMudou();}
 // o acervo de testes foi descartado a pedido; a partir daqui o banco recomeça vazio
 apagar("bancoQuestoes.v1");
 
@@ -778,7 +804,7 @@ var selecionadas={};
 try{questoes=JSON.parse(ler(CHAVE_BANCO)||"[]");}catch(e){questoes=[];}
 try{var c=JSON.parse(ler(CHAVE_CONF)||"null"); if(c){conf.provedor=c.provedor||conf.provedor;conf.modelo=c.modelo||conf.modelo;conf.reserva=c.reserva||"";conf.chave=c.chave||"";conf.raciocinio=!!c.raciocinio;}}catch(e){}
 
-function salvarBanco(){gravar(CHAVE_BANCO,JSON.stringify(questoes));atualizarResumo();}
+function salvarBanco(){gravar(CHAVE_BANCO,JSON.stringify(questoes));atualizarResumo();nuvemMudou();}
 
 /* ---------------- figuras das questões do banco ----------------
    As imagens ficam no IndexedDB, porque o localStorage não comporta;
@@ -801,6 +827,7 @@ function abrirBDFig(){
 function gravarFiguras(itens){
   itens.forEach(function(it){FIGURAS[it.id]=it.dados;});
   if(!itens.length)return Promise.resolve();
+  nuvemMudou();
   return abrirBDFig().then(function(db){
     return new Promise(function(ok,erro){
       var t=db.transaction(LOJA_FIG,"readwrite"), loja=t.objectStore(LOJA_FIG);
@@ -823,6 +850,7 @@ function apagarFiguras(chaves){
   chaves=chaves.filter(Boolean);
   chaves.forEach(function(k){delete FIGURAS[k];});
   if(!chaves.length)return Promise.resolve();
+  nuvemMudou();
   return abrirBDFig().then(function(db){
     return new Promise(function(ok){
       var t=db.transaction(LOJA_FIG,"readwrite"), loja=t.objectStore(LOJA_FIG);
@@ -1359,6 +1387,7 @@ try{materiais=JSON.parse(ler(CHAVE_MATERIAIS)||"[]");}catch(e){materiais=[];}
 function salvarMateriais(){
   try{
     gravar(CHAVE_MATERIAIS,JSON.stringify(materiais));
+    nuvemMudou();
     return true;
   }catch(e){return false;}
 }
@@ -2967,7 +2996,11 @@ $("arquivo-import").addEventListener("change",function(ev){
   ev.target.value="";
 });
 $("btn-apagar").addEventListener("click",function(){
-  if(!confirm("Isso apaga todas as questões arquivadas neste navegador. Confirma?"))return;
+  if(NV.pronto&&!NV.admin){msg("retorno-backup","Com a nuvem ligada, apagar tudo apagaria o banco de todos os professores. Só o administrador pode fazer isso.","erro");return;}
+  if(NV.pronto){
+    if(!confirm("Atenção: a nuvem está ligada. Isso apaga TODAS as questões do banco compartilhado, para todos os professores. Confirma?"))return;
+    NV.liberarApagar=true;
+  }else if(!confirm("Isso apaga todas as questões arquivadas neste navegador. Confirma?"))return;
   questoes.forEach(function(q){apagarFiguras(chavesDeFigura(q));});
   questoes=[];selecionadas={};salvarBanco();renderBanco();
   msg("retorno-backup","Banco esvaziado.","ok");
@@ -3414,7 +3447,7 @@ atualizarResumo();
 renderMateriais();
 atualizarResumoPedido();
 renderBanco();
-carregarFiguras().then(function(){
+var figurasProntas=carregarFiguras().then(function(){
   Object.keys(FIGURAS).forEach(function(k){if(FIGURAS[k].indexOf("data:image/svg")===0)converterParaJpeg(k);});
   if(questoes.some(function(q){return chavesDeFigura(q).length;}))renderBanco();
 }).catch(function(){});
@@ -3443,7 +3476,7 @@ function gravarProva(prova){
     return new Promise(function(ok,erro){
       var t=db.transaction(BD_LOJA,"readwrite");
       t.objectStore(BD_LOJA).put(prova);
-      t.oncomplete=function(){ok();};
+      t.oncomplete=function(){nuvemMudou();ok();};
       t.onerror=function(){erro(t.error);};
     });
   });
@@ -3462,7 +3495,7 @@ function apagarProvaBD(idProva){
     return new Promise(function(ok,erro){
       var t=db.transaction(BD_LOJA,"readwrite");
       t.objectStore(BD_LOJA).delete(idProva);
-      t.oncomplete=function(){ok();};
+      t.oncomplete=function(){nuvemMudou();ok();};
       t.onerror=function(){erro(t.error);};
     });
   });
@@ -5153,6 +5186,404 @@ try{
 }catch(e){}
 iniciarPlano();
 renderPlano();
+
+/* ===================== NUVEM COMPARTILHADA (Firebase) =====================
+   O que é do grupo (questões e figuras do banco, biblioteca de materiais,
+   provas oficiais sem o PDF, modelo timbrado e modelo de planejamento) fica
+   na coleção "dados" do Firestore. A chave de IA, os campos do cabeçalho e o
+   planejamento em edição continuam só neste aparelho.
+   Cada item vira um ou mais documentos {tipo, ref, i, n, v, s, t, apagado}:
+   s é o conteúdo (fatiado quando passa do limite de um documento), v junta as
+   fatias de uma mesma gravação, t é a hora do servidor e apagado marca uma
+   exclusão, para que os outros aparelhos também apaguem.
+   Cada aparelho baixa só o que mudou desde o último marco e envia só o que
+   difere do que já está na nuvem, comparando um resumo do conteúdo.        */
+var NUVEM_CONFIG={
+  apiKey:"AIzaSyCmj-QbwrP2JaBeVw7IXYQzvni5L9NLrsM",
+  authDomain:"banco-de-questoes-2bd19.firebaseapp.com",
+  projectId:"banco-de-questoes-2bd19",
+  storageBucket:"banco-de-questoes-2bd19.firebasestorage.app",
+  messagingSenderId:"568594517067",
+  appId:"1:568594517067:web:1e843ef7816e672ef6d1ce"
+};
+var NUVEM_ADMIN="matheusernandes09@gmail.com";
+var CHAVE_NUVEM="bancoQuestoes.nuvem.v1";
+var FATIA=300000, LOTE_DOCS=400, LOTE_PESO=7000000, FOLGA_MARCO=300000;
+var NV={sdk:null,auth:null,db:null,usuario:null,membro:false,admin:false,pronto:false,
+        ouvinte:null,marco:0,h:{},enviando:null,denovo:false,espera:null,
+        versoes:{},aplicado:{},fila:Promise.resolve(),teste:false};
+try{
+  var nuvemSalva=JSON.parse(ler(CHAVE_NUVEM)||"null");
+  if(nuvemSalva){NV.marco=nuvemSalva.marco||0;NV.h=nuvemSalva.h||{};}
+}catch(e){}
+function nuvemGuardar(){gravar(CHAVE_NUVEM,JSON.stringify({marco:NV.marco,h:NV.h}));}
+function resumoDe(s){
+  var h=0x811c9dc5;
+  for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193);}
+  return (h>>>0).toString(36)+"."+s.length.toString(36);
+}
+function semArquivo(pr){
+  var c={};
+  Object.keys(pr).forEach(function(k){if(k!=="arquivo")c[k]=pr[k];});
+  return c;
+}
+function semAtivo(m){
+  var c={};
+  Object.keys(m).forEach(function(k){if(k!=="ativo")c[k]=m[k];});
+  return c;
+}
+
+/* ---- indicador no topo e bloco em Ajustes ---- */
+var TEXTO_NUVEM={
+  desligada:["☁ Entrar na nuvem","Desconectada. Entre com sua conta Google para usar o banco compartilhado."],
+  arquivo:["☁ Nuvem indisponível","A nuvem só funciona pelo link do site (theusernandes.github.io/banco-de-questoes). Aberto como arquivo no computador, tudo fica só neste navegador."],
+  carregando:["☁ Conectando…","Conectando à nuvem…"],
+  baixando:["☁ Baixando…","Baixando as novidades da nuvem…"],
+  enviando:["☁ Enviando…","Enviando suas alterações para a nuvem…"],
+  ok:["☁ Sincronizado","Tudo sincronizado. O que você ou um colega salvar aparece para os outros sozinho."],
+  semacesso:["☁ Sem acesso","Seu e-mail ainda não foi liberado para o banco compartilhado. Peça ao Matheus para liberar e depois clique em Tentar de novo."],
+  offline:["☁ Sem internet","Sem internet. O que você salvar fica guardado aqui e sobe para a nuvem quando a conexão voltar."],
+  erro:["☁ Erro na nuvem","A nuvem não respondeu. As alterações ficam guardadas aqui e o envio é tentado de novo sozinho."]
+};
+function nuvemEstado(qual,detalhe){
+  NV.estado=qual;
+  var t=TEXTO_NUVEM[qual]||TEXTO_NUVEM.erro, chip=$("nuvem-chip");
+  if(chip){chip.textContent=t[0];chip.className="nuvem-chip "+qual;}
+  var alvo=$("nuvem-estado");
+  if(alvo){
+    var quem=NV.usuario?'<br>Conectado como <strong>'+esc(NV.usuario.email)+'</strong>.':"";
+    msg("nuvem-estado",esc(t[1])+(detalhe?" ("+esc(detalhe)+")":"")+quem,
+        qual==="ok"?"ok":(qual==="erro"||qual==="semacesso"?"erro":""));
+  }
+  var logado=!!NV.usuario;
+  if($("btn-nuvem-entrar"))$("btn-nuvem-entrar").style.display=logado||qual==="arquivo"?"none":"";
+  if($("btn-nuvem-sair"))$("btn-nuvem-sair").style.display=logado?"":"none";
+  if($("btn-nuvem-tentar"))$("btn-nuvem-tentar").style.display=logado&&qual==="semacesso"?"":"none";
+  if($("nuvem-membros"))$("nuvem-membros").style.display=NV.admin&&NV.membro?"":"none";
+}
+
+/* ---- conexão ---- */
+function nuvemIniciar(){
+  var emulador=/[?&]emulador=1/.test(location.search)&&/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  if(location.protocol==="file:"&&!emulador){nuvemEstado("arquivo");return;}
+  nuvemEstado("carregando");
+  import("./firebase-sdk.js").then(function(S){
+    NV.sdk=S;
+    var cfg=emulador?{apiKey:"teste",authDomain:"localhost",projectId:"demo-banco"}:NUVEM_CONFIG;
+    var app=S.initializeApp(cfg);
+    NV.auth=S.getAuth(app);
+    NV.db=S.getFirestore(app);
+    if(emulador){
+      S.connectAuthEmulator(NV.auth,"http://127.0.0.1:9099",{disableWarnings:true});
+      S.connectFirestoreEmulator(NV.db,"127.0.0.1",8080);
+      NV.teste=true;
+      var folga=/[?&]folga=(\d+)/.exec(location.search);
+      if(folga)FOLGA_MARCO=+folga[1];
+      window.nuvemTeste={
+        entrar:function(email){
+          return S.signInWithCredential(NV.auth,S.GoogleAuthProvider.credential(
+            JSON.stringify({sub:email,email:email,email_verified:true})));
+        },
+        nv:NV
+      };
+    }
+    S.onAuthStateChanged(NV.auth,function(u){
+      NV.usuario=u&&u.email?{email:u.email.toLowerCase()}:null;
+      nuvemParar();
+      if(!NV.usuario){nuvemEstado("desligada");return;}
+      nuvemVerificarAcesso();
+    });
+  }).catch(function(e){
+    nuvemEstado("erro","não foi possível carregar o módulo da nuvem");
+  });
+}
+function nuvemVerificarAcesso(){
+  var S=NV.sdk;
+  NV.admin=NV.usuario.email===NUVEM_ADMIN;
+  nuvemEstado("carregando");
+  var conferir=NV.admin?Promise.resolve(true)
+    :S.getDoc(S.doc(NV.db,"membros",NV.usuario.email)).then(function(d){return d.exists();});
+  conferir.then(function(ok){
+    NV.membro=ok;
+    if(!ok){nuvemEstado("semacesso");return;}
+    if(NV.admin)nuvemListarMembros();
+    figurasProntas.then(nuvemOuvir);
+  }).catch(function(e){
+    NV.membro=false;
+    nuvemEstado(e&&e.code==="permission-denied"?"semacesso":"erro",e&&e.code);
+  });
+}
+function nuvemParar(){
+  if(NV.ouvinte){NV.ouvinte();NV.ouvinte=null;}
+  NV.pronto=false;NV.membro=false;NV.admin=false;
+  clearTimeout(NV.espera);
+}
+
+/* ---- recebimento: um ouvinte só, a partir do último marco ---- */
+function nuvemOuvir(){
+  var S=NV.sdk;
+  if(NV.ouvinte)NV.ouvinte();
+  nuvemEstado("baixando");
+  var desde=Math.max(0,NV.marco-FOLGA_MARCO), primeira=true;
+  var q=S.query(S.collection(NV.db,"dados"),S.where("t",">",S.Timestamp.fromMillis(desde)));
+  NV.ouvinte=S.onSnapshot(q,function(snap){
+    var lista=[];
+    // gravações deste aparelho ainda não confirmadas pelo servidor ficam de fora
+    snap.docChanges().forEach(function(c){if(c.type!=="removed"&&!c.doc.metadata.hasPendingWrites)lista.push(c.doc.data());});
+    NV.recebidos=(NV.recebidos||0)+lista.length;
+    NV.fila=NV.fila.then(function(){return aplicarDaNuvem(lista);}).catch(function(e){
+      nuvemEstado("erro",e&&e.message);
+    }).then(function(){
+      if(primeira){
+        primeira=false;NV.pronto=true;
+        nuvemEstado("ok");
+        nuvemEnviar();
+      }
+    });
+  },function(e){
+    NV.ouvinte=null;NV.pronto=false;
+    nuvemEstado(e&&e.code==="permission-denied"?"semacesso":"erro",e&&e.code);
+    if(!(e&&e.code==="permission-denied"))setTimeout(function(){if(NV.membro&&!NV.ouvinte)nuvemOuvir();},30000);
+  });
+}
+function aplicarDaNuvem(lista){
+  var maior=NV.marco, tocados={};
+  lista.forEach(function(d){
+    if(!d||!d.t||!d.tipo||d.ref==null)return;   // gravação deste aparelho ainda sem a hora do servidor
+    var ms=d.t.toMillis(); if(ms>maior)maior=ms;
+    var k=d.tipo+"~"+d.ref, porV=NV.versoes[k]||(NV.versoes[k]={});
+    var ver=porV[d.v]||(porV[d.v]={n:d.n,p:{},t:0,apagado:false});
+    ver.p[d.i]=d.s||"";
+    if(d.i===0){ver.t=ms;ver.apagado=!!d.apagado;ver.n=d.n;}
+    tocados[k]=1;
+  });
+  // de cada item, vale a gravação completa mais recente
+  var prontos=[];
+  Object.keys(tocados).forEach(function(k){
+    var porV=NV.versoes[k], melhor=null;
+    Object.keys(porV).forEach(function(v){
+      var ver=porV[v];
+      if(!ver.t)return;
+      for(var i=0;i<ver.n;i++)if(!(i in ver.p))return;
+      if(!melhor||ver.t>melhor.t)melhor=ver;
+    });
+    if(!melhor||melhor.t<(NV.aplicado[k]||0))return;
+    NV.aplicado[k]=melhor.t;
+    var s="";
+    for(var i=0;i<melhor.n;i++)s+=melhor.p[i];
+    prontos.push({k:k,apagado:melhor.apagado,s:s});
+    delete NV.versoes[k];
+  });
+  var mudou={q:false,m:false,p:false};
+  var provas=[], esperas=[];
+  prontos.forEach(function(it){
+    var r=it.apagado?"x":resumoDe(it.s);
+    if(NV.h[it.k]===r)return;          // é o eco do que este aparelho já tem
+    var p=it.k.indexOf("~"), tipo=it.k.slice(0,p), ref=it.k.slice(p+1);
+    NV.h[it.k]=r;
+    try{
+      if(tipo==="q"){
+        var pos=-1;questoes.some(function(q,i){if(q.id===ref){pos=i;return true;}});
+        if(it.apagado){if(pos>-1)questoes.splice(pos,1);delete selecionadas[ref];}
+        else{
+          var nova=JSON.parse(it.s);
+          if(!nova||!nova.id||!nova.enunciado)throw new Error("questão incompleta");
+          if(!Array.isArray(nova.alternativas))nova.alternativas=[];
+          if(pos>-1)questoes[pos]=nova;else questoes.unshift(nova);
+        }
+        mudou.q=true;
+      }else if(tipo==="f"){
+        esperas.push(it.apagado?apagarFiguras([ref]):gravarFiguras([{id:ref,dados:it.s}]));
+        mudou.q=true;
+      }else if(tipo==="m"){
+        var pm=-1;materiais.some(function(m,i){if(m.id===ref){pm=i;return true;}});
+        if(it.apagado){if(pm>-1)materiais.splice(pm,1);}
+        else{
+          var mat=JSON.parse(it.s);
+          mat.ativo=pm>-1?!!materiais[pm].ativo:false;
+          if(pm>-1)materiais[pm]=mat;else materiais.push(mat);
+        }
+        mudou.m=true;
+      }else if(tipo==="p"){
+        provas.push({ref:ref,apagado:it.apagado,s:it.s});
+        mudou.p=true;
+      }else if(tipo==="x"&&ref==="timbrado"){
+        if(it.apagado){apagar(CHAVE_MODELO);}
+        else{gravar(CHAVE_MODELO,it.s);var mm=recuperarModelo();if(mm)carregarModelo(mm,false);}
+      }else if(tipo==="x"&&ref==="plano"){
+        if(it.apagado)apagar(CHAVE_MODELO_PLANO);else gravar(CHAVE_MODELO_PLANO,it.s);
+        modeloPlano=recuperarModeloPlano();resumoModeloPlano();
+      }
+    }catch(e){delete NV.h[it.k];}
+  });
+  if(mudou.q){salvarBanco();if(!editando)renderBanco();}
+  if(mudou.m){salvarMateriais();renderMateriais();}
+  var etapaProvas=!provas.length?Promise.resolve():listarProvas().catch(function(){return [];}).then(function(atuais){
+    var porId={};atuais.forEach(function(pr){porId[pr.id]=pr;});
+    return Promise.all(provas.map(function(pr){
+      if(pr.apagado)return apagarProvaBD(pr.ref);
+      var nova=JSON.parse(pr.s);
+      if(porId[pr.ref]&&porId[pr.ref].arquivo)nova.arquivo=porId[pr.ref].arquivo;   // o PDF original continua só aqui
+      return gravarProva(nova);
+    })).then(function(){return recarregarProvas();});
+  });
+  return Promise.all(esperas.concat([etapaProvas])).catch(function(){}).then(function(){
+    if(mudou.q&&!editando)renderBanco();
+    NV.marco=maior;
+    nuvemGuardar();
+  });
+}
+
+/* ---- envio: compara o que há aqui com o resumo do que está na nuvem ---- */
+function nuvemMudou(){
+  if(!NV||!NV.pronto)return;
+  clearTimeout(NV.espera);
+  NV.espera=setTimeout(nuvemEnviar,1500);
+}
+function itensLocais(){
+  var mapa={};
+  questoes.forEach(function(q){mapa["q~"+q.id]=JSON.stringify(q);});
+  Object.keys(FIGURAS).forEach(function(k){if(FIGURAS[k])mapa["f~"+k]=FIGURAS[k];});
+  materiais.forEach(function(m){mapa["m~"+m.id]=JSON.stringify(semAtivo(m));});
+  var tb=ler(CHAVE_MODELO); if(tb)mapa["x~timbrado"]=tb;
+  var pl=ler(CHAVE_MODELO_PLANO); if(pl)mapa["x~plano"]=pl;
+  return listarProvas().then(function(lista){
+    lista.forEach(function(pr){mapa["p~"+pr.id]=JSON.stringify(semArquivo(pr));});
+    return {mapa:mapa,semProvas:false};
+  },function(){return {mapa:mapa,semProvas:true};});
+}
+function nuvemEnviar(){
+  if(!NV.pronto||!NV.membro)return Promise.resolve();
+  if(NV.enviando){NV.denovo=true;return NV.enviando;}
+  var liberar=NV.liberarApagar;NV.liberarApagar=false;
+  NV.enviando=itensLocais().then(function(r){
+    var mapa=r.mapa, escritas=[], sumidos={};
+    Object.keys(mapa).forEach(function(k){
+      var rs=resumoDe(mapa[k]);
+      if(NV.h[k]!==rs&&!(NV.grandes&&NV.grandes[k]))escritas.push({k:k,s:mapa[k],r:rs});
+    });
+    Object.keys(NV.h).forEach(function(k){
+      if(NV.h[k]==="x"||k in mapa)return;
+      if(r.semProvas&&k.indexOf("p~")===0)return;
+      var tipo=k.slice(0,k.indexOf("~"));
+      (sumidos[tipo]=sumidos[tipo]||[]).push(k);
+    });
+    // se um tipo inteiro sumiu daqui (navegador limpo, por exemplo), não apaga a nuvem de todos:
+    // baixa tudo de novo
+    var limpo=Object.keys(sumidos).some(function(tipo){
+      var temAqui=Object.keys(mapa).some(function(k){return k.indexOf(tipo+"~")===0;});
+      return !temAqui&&sumidos[tipo].length>3&&!liberar;
+    });
+    if(limpo){NV.marco=0;NV.h={};NV.aplicado={};nuvemGuardar();nuvemOuvir();return;}
+    Object.keys(sumidos).forEach(function(tipo){
+      sumidos[tipo].forEach(function(k){escritas.push({k:k,s:null,r:"x"});});
+    });
+    if(!escritas.length)return;
+    nuvemEstado("enviando");
+    return gravarNaNuvem(escritas).then(function(){
+      var g=Object.keys(NV.grandes||{}).length;
+      nuvemEstado("ok",g?(g===1?"1 item grande demais ficou só neste aparelho":g+" itens grandes demais ficaram só neste aparelho"):"");
+    });
+  }).catch(function(e){
+    nuvemEstado(e&&e.code==="permission-denied"?"semacesso":(navigator.onLine===false?"offline":"erro"),e&&(e.code||e.message));
+    clearTimeout(NV.espera);
+    NV.espera=setTimeout(nuvemEnviar,30000);
+  }).then(function(){
+    NV.enviando=null;
+    if(NV.denovo){NV.denovo=false;nuvemMudou();}
+  });
+  return NV.enviando;
+}
+function gravarNaNuvem(escritas){
+  var S=NV.sdk, lotes=[], atual={docs:[],itens:[],peso:0};
+  // um item maior que um envio inteiro do Firestore não sobe; fica só neste aparelho
+  escritas=escritas.filter(function(e){
+    if(e.s&&e.s.length>LOTE_PESO){NV.grandes=(NV.grandes||{});NV.grandes[e.k]=1;return false;}
+    return true;
+  });
+  escritas.forEach(function(e){
+    var p=e.k.indexOf("~"), tipo=e.k.slice(0,p), ref=e.k.slice(p+1);
+    var v=Date.now().toString(36)+Math.random().toString(36).slice(2,8), partes=[];
+    if(e.s===null)partes=[""];
+    else for(var i=0;i===0||i<e.s.length;i+=FATIA)partes.push(e.s.slice(i,i+FATIA));
+    var docs=partes.map(function(s,i){
+      return {id:tipo+"~"+ref+"~"+i,dados:{tipo:tipo,ref:ref,i:i,n:partes.length,v:v,s:s,
+              apagado:e.s===null,por:NV.usuario.email,t:S.serverTimestamp()}};
+    });
+    var peso=(e.s?e.s.length:0)+docs.length*300;
+    // um item nunca fica dividido entre dois lotes
+    if(atual.docs.length&&(atual.docs.length+docs.length>LOTE_DOCS||atual.peso+peso>LOTE_PESO)){
+      lotes.push(atual);atual={docs:[],itens:[],peso:0};
+    }
+    atual.docs=atual.docs.concat(docs);atual.itens.push(e);atual.peso+=peso;
+  });
+  if(atual.docs.length)lotes.push(atual);
+  var corrente=Promise.resolve();
+  lotes.forEach(function(l){
+    corrente=corrente.then(function(){
+      var b=S.writeBatch(NV.db);
+      l.docs.forEach(function(d){b.set(S.doc(NV.db,"dados",d.id),d.dados);});
+      return b.commit().then(function(){
+        l.itens.forEach(function(e){NV.h[e.k]=e.r;});
+        nuvemGuardar();
+      });
+    });
+  });
+  return corrente;
+}
+
+/* ---- professores liberados (só o administrador vê) ---- */
+function nuvemListarMembros(){
+  var S=NV.sdk;
+  return S.getDocs(S.collection(NV.db,"membros")).then(function(r){
+    var emails=[];r.forEach(function(d){emails.push(d.id);});
+    emails.sort();
+    $("lista-membros").innerHTML=emails.length
+      ? emails.map(function(e){return '<li>'+esc(e)+' <button class="botao secundario" data-remover-membro="'+esc(e)+'" style="padding:3px 10px;font-size:12.5px;margin-left:6px">remover</button></li>';}).join("")
+      : '<li style="color:var(--cinza)">nenhum colega liberado ainda</li>';
+    document.querySelectorAll("[data-remover-membro]").forEach(function(b){
+      b.addEventListener("click",function(){
+        var e=this.dataset.removerMembro;
+        if(!confirm("Remover o acesso de "+e+" ao banco compartilhado?"))return;
+        S.deleteDoc(S.doc(NV.db,"membros",e)).then(nuvemListarMembros).catch(function(x){
+          msg("retorno-membros",esc(x&&x.code||"falha ao remover"),"erro");
+        });
+      });
+    });
+  }).catch(function(x){msg("retorno-membros",esc(x&&x.code||"falha ao listar"),"erro");});
+}
+$("btn-liberar-membro").addEventListener("click",function(){
+  var S=NV.sdk, e=$("novo-membro").value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){msg("retorno-membros","Digite um e-mail válido.","erro");return;}
+  S.setDoc(S.doc(NV.db,"membros",e),{por:NV.usuario.email,em:S.serverTimestamp()}).then(function(){
+    $("novo-membro").value="";
+    msg("retorno-membros","Liberado: "+esc(e)+". A pessoa entra pelo link com esse e-mail do Google.","ok");
+    return nuvemListarMembros();
+  }).catch(function(x){msg("retorno-membros",esc(x&&x.code||"falha ao liberar"),"erro");});
+});
+$("btn-nuvem-entrar").addEventListener("click",function(){
+  if(!NV.auth){msg("nuvem-estado","A nuvem ainda está carregando. Tente de novo em alguns segundos.","erro");return;}
+  var S=NV.sdk, prov=new S.GoogleAuthProvider();
+  prov.setCustomParameters({prompt:"select_account"});
+  S.signInWithPopup(NV.auth,prov).catch(function(e){
+    if(e&&e.code==="auth/popup-blocked")return S.signInWithRedirect(NV.auth,prov);
+    if(e&&e.code==="auth/popup-closed-by-user")return;
+    nuvemEstado("erro",e&&e.code);
+  }).catch(function(){});
+});
+$("btn-nuvem-sair").addEventListener("click",function(){
+  if(NV.auth)NV.sdk.signOut(NV.auth).catch(function(){});
+});
+$("btn-nuvem-tentar").addEventListener("click",function(){
+  if(NV.usuario)nuvemVerificarAcesso();
+});
+$("nuvem-chip").addEventListener("click",function(){
+  var aba=document.querySelector('.aba[data-vista="ajustes"]');
+  if(aba)aba.click();
+  var bloco=$("bloco-nuvem");if(bloco&&bloco.scrollIntoView)bloco.scrollIntoView({behavior:"smooth",block:"start"});
+});
+window.addEventListener("online",function(){if(NV.pronto)nuvemMudou();});
+nuvemIniciar();
 
 })();
 </script>

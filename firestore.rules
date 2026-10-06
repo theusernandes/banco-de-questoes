@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function logado() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function admin() {
+      return logado() && request.auth.token.email == 'matheusernandes09@gmail.com';
+    }
+    function membro() {
+      return admin() || (logado() &&
+        exists(/databases/$(database)/documents/membros/$(request.auth.token.email)));
+    }
+    // questões, figuras, materiais, provas e modelos do grupo
+    match /dados/{item} {
+      allow read: if membro();
+      allow create, update: if membro() && request.resource.data.t == request.time;
+      allow delete: if admin();
+    }
+    // professores liberados (só o administrador inclui ou remove)
+    match /membros/{email} {
+      allow read: if membro() || (logado() && request.auth.token.email == email);
+      allow write: if admin();
+    }
+  }
+}
