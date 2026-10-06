@@ -39,6 +39,9 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .marca{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .marca h1{font-size:18px;font-weight:700;letter-spacing:-.01em}
 .marca h1 span{display:block;font-family:var(--sans);font-size:11px;font-weight:400;color:var(--cinza);margin-top:2px}
+/* com a nuvem, importar, exportar e apagar ficam só com o administrador */
+.so-admin{display:none}
+body.pode-admin .so-admin{display:block}
 .nuvem-chip{font:inherit;font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid var(--regua);background:var(--carta);color:var(--cinza);cursor:pointer}
 .nuvem-chip.ok{background:var(--verde-fundo);color:var(--verde-escuro);border-color:transparent}
 .nuvem-chip.enviando,.nuvem-chip.baixando,.nuvem-chip.carregando{background:var(--ambar-fundo);color:#7a5210;border-color:transparent}
@@ -671,7 +674,7 @@ input[type=file]{font-size:13px}
 <section class="vista" id="vista-ajustes">
   <div class="bloco" id="bloco-nuvem">
     <h2>Nuvem compartilhada</h2>
-    <p class="ajuda">Com a nuvem ligada, as questões, as figuras, a biblioteca de materiais, as provas oficiais e os modelos ficam guardados no Google e aparecem para todos os professores liberados. Quem salvar, editar ou excluir algo muda para todos. A chave de acesso à IA continua só neste aparelho.</p>
+    <p class="ajuda">Com a nuvem ligada, as questões, as figuras, a biblioteca de materiais, as provas oficiais e os modelos ficam guardados no Google e aparecem para todos os professores liberados. Quem salvar, editar ou excluir algo muda para todos. A chave de acesso à IA continua só neste aparelho. Importar, exportar e apagar tudo ficam visíveis só para o administrador.</p>
     <div id="nuvem-estado"></div>
     <div class="botoes" style="margin-top:6px">
       <button class="botao" id="btn-nuvem-entrar">Entrar com Google</button>
@@ -728,7 +731,7 @@ input[type=file]{font-size:13px}
     </details>
   </div>
 
-  <div class="bloco">
+  <div class="bloco so-admin">
     <h2>Levar tudo para outro computador</h2>
     <p class="ajuda">Gera um único arquivo com as questões, a biblioteca de materiais e o modelo timbrado. Quem receber importa por aqui e passa a ter o mesmo conjunto, sem reanexar nada. A chave de acesso à IA não vai junto: cada pessoa usa a sua.</p>
     <div class="botoes" style="margin-top:0">
@@ -741,7 +744,7 @@ input[type=file]{font-size:13px}
     <div id="retorno-pacote"></div>
   </div>
 
-  <div class="bloco">
+  <div class="bloco so-admin">
     <h2>Cópia de segurança</h2>
     <p class="ajuda">Peças avulsas, para quando você quiser enviar só as questões. Para montar um colega do zero, use o pacote completo acima.</p>
     <div class="botoes" style="margin-top:0">
@@ -5260,6 +5263,8 @@ function nuvemEstado(qual,detalhe){
   if($("btn-nuvem-sair"))$("btn-nuvem-sair").style.display=logado?"":"none";
   if($("btn-nuvem-tentar"))$("btn-nuvem-tentar").style.display=logado&&qual==="semacesso"?"":"none";
   if($("nuvem-membros"))$("nuvem-membros").style.display=NV.admin&&NV.membro?"":"none";
+  // aberto como arquivo, sem nuvem, a pessoa é dona de tudo; no link, só o administrador
+  document.body.classList.toggle("pode-admin",qual==="arquivo"||(NV.admin&&NV.membro));
 }
 
 /* ---- conexão ---- */
