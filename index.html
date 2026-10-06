@@ -41,6 +41,12 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .marca h1 span{display:block;font-family:var(--sans);font-size:11px;font-weight:400;color:var(--cinza);margin-top:2px}
 /* com a nuvem, importar, exportar e apagar ficam só com o administrador */
 .so-admin{display:none}
+.aviso-chave-topo{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:var(--ambar-fundo);color:#5c3d0a;border-radius:var(--raio);padding:14px 18px;margin-bottom:16px;font-size:14px}
+.fundo-janela{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.janela{background:var(--carta);border-radius:var(--raio);max-width:560px;width:100%;padding:24px 26px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.janela h2{margin-top:0}
+.passos-chave{padding-left:20px;margin:12px 0;font-size:14px;line-height:1.7}
+.passos-chave li{margin-bottom:8px}
 body.pode-admin .so-admin{display:block}
 .nuvem-chip{font:inherit;font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid var(--regua);background:var(--carta);color:var(--cinza);cursor:pointer}
 .nuvem-chip.ok{background:var(--verde-fundo);color:var(--verde-escuro);border-color:transparent}
@@ -242,6 +248,10 @@ input[type=file]{font-size:13px}
 
 <!-- ============ GERAR ============ -->
 <section class="vista ativa" id="vista-gerar">
+  <div class="aviso-chave-topo" id="aviso-sem-chave" style="display:none">
+    <span><strong>Falta a sua chave de acesso à IA.</strong> Ela é gratuita, cada professor usa a sua, e leva dois minutos.</span>
+    <button class="botao" type="button" data-abrir-assistente="1">Cadastrar minha chave</button>
+  </div>
   <div class="bloco">
     <details id="det-biblioteca">
           <summary><strong>Biblioteca de materiais</strong> <span id="resumo-biblioteca" class="sumario"></span></summary>
@@ -758,6 +768,28 @@ input[type=file]{font-size:13px}
 </section>
 
 </main>
+
+<div id="assistente-chave" class="fundo-janela" style="display:none" role="dialog" aria-modal="true" aria-labelledby="titulo-assistente">
+  <div class="janela">
+    <h2 id="titulo-assistente">Cadastre a sua chave de acesso à IA</h2>
+    <p class="ajuda">Para gerar questões, o site usa a inteligência artificial do Google (Gemini). A chave é gratuita e pessoal: cada professor usa a sua, porque o limite diário é por conta.</p>
+    <ol class="passos-chave">
+      <li><button class="botao" type="button" id="btn-abrir-aistudio">Abrir o site da chave</button> <span class="ajuda">abre em outra aba</span></li>
+      <li>Entre com sua <strong>conta Google</strong> (pode ser o Gmail pessoal) e aceite os termos, se pedir.</li>
+      <li>Clique em <strong>Criar chave de API</strong> (ou "Create API key"). Se perguntar o projeto, deixe criar um novo.</li>
+      <li>Copie a chave. Ela começa com <strong>AIza</strong>.</li>
+      <li>Volte para esta aba, cole aqui e clique em <strong>Salvar e testar</strong>:
+        <input type="password" id="chave-assistente" placeholder="Cole a chave aqui (começa com AIza)" autocomplete="off" style="margin-top:8px">
+      </li>
+    </ol>
+    <div id="retorno-assistente"></div>
+    <div class="botoes">
+      <button class="botao" type="button" id="btn-salvar-assistente">Salvar e testar</button>
+      <button class="botao secundario" type="button" id="btn-fechar-assistente">Fechar</button>
+    </div>
+    <p class="ajuda" style="margin-top:10px">A chave fica salva só neste aparelho. Depois ela também aparece em Ajustes, onde dá para trocar.</p>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
@@ -2163,12 +2195,13 @@ $("btn-gerar").addEventListener("click",function(){
   };
   var quantidades=lerQuantidades("q-"), total=quantidades._total;
 
+  if(!conf.chave){msg("retorno-geracao","Falta cadastrar a sua chave de acesso à IA.","erro");abrirAssistenteChave();return;}
   if(!p.assunto&&!ativos().length&&!p.textoExtra){msg("retorno-geracao","Informe o assunto, marque um material da biblioteca ou cole um texto avulso antes de gerar.","erro");return;}
   if(total===0){msg("retorno-geracao","Defina a quantidade de pelo menos um estilo de questão.","erro");return;}
   if(/preview|exp/.test(conf.modelo||""))
     msg("retorno-geracao","Atenção: <strong>"+esc(conf.modelo)+"</strong> é um modelo de pré-lançamento — são os mais congestionados e com menor cota. Em Ajustes, clique em buscar modelos disponíveis para trocar por um estável.","");
   if(!navigator.onLine){msg("retorno-geracao","Seu computador está <strong>sem conexão com a internet</strong>. A geração depende do provedor de IA. Reconecte e tente de novo — nada foi perdido.","erro");return;}
-  if(!conf.chave){msg("retorno-geracao","Nenhuma chave de API salva. Abra <strong>Ajustes</strong>, cole a chave e clique em testar conexão antes de gerar.","erro");return;}
+  if(!conf.chave){msg("retorno-geracao","Nenhuma chave de API salva. Abra <strong>Ajustes</strong>, cole a chave e clique em testar conexão antes de gerar.","erro");abrirAssistenteChave();return;}
   if(total>20){msg("retorno-geracao","O limite é de 20 questões por geração — acima disso o provedor costuma recusar os lotes. Gere em rodadas de até 20; o banco vai acumulando.","erro");return;}
   if(!conf.reserva&&conf.provedor==="gemini")
     msg("retorno-geracao","Sem modelo reserva cadastrado. Se o principal estiver congestionado, cada tentativa custa quase um minuto. Vale abrir <strong>Ajustes</strong> e clicar em buscar modelos disponíveis.","");
@@ -2699,7 +2732,7 @@ $("btn-completar").addEventListener("click",function(){
   }
   var quantidades=lerQuantidades("c-");
   if(!quantidades._total){msg("retorno-completar","Defina quantas questões novas você quer.","erro");return;}
-  if(!conf.chave){msg("retorno-completar","Nenhuma chave de API salva. Cadastre-a em Ajustes.","erro");return;}
+  if(!conf.chave){msg("retorno-completar","Nenhuma chave de API salva. Cadastre-a em Ajustes.","erro");abrirAssistenteChave();return;}
   if(quantidades._total>20){msg("retorno-completar","O limite é de 20 questões por geração. Complete a prova em rodadas.","erro");return;}
 
   var p={},k;
@@ -2771,6 +2804,7 @@ $("btn-salvar-chave").addEventListener("click",function(){
   conf.chave=$("chave").value.trim();
   $("modelo").value=conf.modelo;
   salvarConf();
+  atualizarAvisoChave();
   msg("retorno-chave",conf.chave?"Chave salva neste aparelho.":"Chave removida.","ok");
 });
 $("btn-testar").addEventListener("click",function(){
@@ -2781,11 +2815,52 @@ $("btn-testar").addEventListener("click",function(){
   salvarConf();
   msg("retorno-chave","Testando…","");
   chamarIAComInsistencia("Responda apenas com a palavra ok.",function(a){msg("retorno-chave",esc(a),"");}).then(function(){
+    atualizarAvisoChave();
     msg("retorno-chave","Conexão funcionando. Já pode gerar questões.","ok");
   }).catch(function(e){msg("retorno-chave",esc(e.message),"erro");});
 });
 
 $("chave").addEventListener("input",ajustarBotoesChave);
+
+/* ---- assistente da chave: leva quem não tem chave ao site do Google e de volta ---- */
+function atualizarAvisoChave(){
+  var aviso=$("aviso-sem-chave");
+  if(aviso)aviso.style.display=conf.chave?"none":"";
+}
+function abrirAssistenteChave(){
+  $("chave-assistente").value="";
+  $("retorno-assistente").innerHTML="";
+  $("assistente-chave").style.display="";
+}
+function fecharAssistenteChave(){$("assistente-chave").style.display="none";}
+document.querySelectorAll("[data-abrir-assistente]").forEach(function(b){b.addEventListener("click",abrirAssistenteChave);});
+$("btn-abrir-aistudio").addEventListener("click",function(){
+  window.open("https://aistudio.google.com/apikey","_blank","noopener");
+});
+$("btn-fechar-assistente").addEventListener("click",fecharAssistenteChave);
+$("assistente-chave").addEventListener("click",function(ev){if(ev.target===this)fecharAssistenteChave();});
+$("btn-salvar-assistente").addEventListener("click",function(){
+  var chave=$("chave-assistente").value.trim().replace(/\s+/g,"");
+  if(!chave){msg("retorno-assistente","Cole a chave no campo acima.","erro");return;}
+  if(!/^AIza/.test(chave)){msg("retorno-assistente","Essa não parece uma chave do Google: ela deve começar com AIza. Confira se copiou a chave inteira.","erro");return;}
+  var antes={provedor:conf.provedor,modelo:conf.modelo,chave:conf.chave};
+  conf.provedor="gemini";
+  if(!conf.modelo||/^claude/.test(conf.modelo))conf.modelo=PADRAO.gemini;
+  conf.chave=chave;
+  var botao=this;botao.disabled=true;
+  msg("retorno-assistente","Testando a chave…","");
+  chamarIAComInsistencia("Responda apenas com a palavra ok.",function(){}).then(function(){
+    salvarConf();
+    $("provedor").value=conf.provedor;$("modelo").value=conf.modelo;$("chave").value=conf.chave;
+    ajustarBotoesChave();atualizarAvisoChave();
+    msg("retorno-assistente","Chave funcionando e salva. Já pode gerar questões.","ok");
+    setTimeout(fecharAssistenteChave,1600);
+  }).catch(function(e){
+    conf.provedor=antes.provedor;conf.modelo=antes.modelo;conf.chave=antes.chave;
+    msg("retorno-assistente","A chave não funcionou: "+esc(e.message)+" Confira se copiou a chave inteira.","erro");
+  }).then(function(){botao.disabled=false;});
+});
+atualizarAvisoChave();
 $("btn-modelos").addEventListener("click",function(){
   var chave=$("chave").value.trim();
   if(!chave){msg("retorno-chave","Cole a chave de API antes de buscar os modelos.","erro");return;}
@@ -2937,7 +3012,7 @@ $("arquivo-pacote").addEventListener("change",function(ev){
         salvarConf();
         $("provedor").value=conf.provedor;$("modelo").value=conf.modelo;
         $("reserva").value=conf.reserva;$("chave").value=conf.chave;
-        ajustarBotoesChave();
+        ajustarBotoesChave();atualizarAvisoChave();
         relato.push("a chave de acesso à IA");
       }
     }
@@ -4439,7 +4514,7 @@ $("btn-limpar-oficiais").addEventListener("click",function(){oficiaisSelecionada
 $("btn-folha-oficiais").addEventListener("click",montarFolhaOficiais);
 $("btn-classificar-prova").addEventListener("click",function(){
   if(!provaAtual){msg("retorno-prova","Escolha uma prova primeiro.","erro");return;}
-  if(!conf.chave){msg("retorno-prova","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");return;}
+  if(!conf.chave){msg("retorno-prova","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
   var pendentes=provaAtual.questoes.filter(function(q){return !q.assunto;});
   if(!pendentes.length){msg("retorno-prova","Todas as questões desta prova já têm matéria e assunto.","ok");return;}
   var botao=this;
@@ -4934,7 +5009,7 @@ function montarPedidoPlano(){
 }
 
 $("btn-gerar-plano").addEventListener("click",function(){
-  if(!conf.chave){msg("retorno-plano","Cadastre a chave de acesso à IA em Ajustes.","erro");return;}
+  if(!conf.chave){msg("retorno-plano","Cadastre a chave de acesso à IA em Ajustes.","erro");abrirAssistenteChave();return;}
   var aulas=aulasDoFormulario();
   if(!aulas.length){msg("retorno-plano","Descreva a divisão entre as aulas, uma por linha, começando por \"Aula 01:\".","erro");return;}
   if(!$("pl-periodo").value.trim()){msg("retorno-plano","Informe a data das aulas.","erro");return;}
