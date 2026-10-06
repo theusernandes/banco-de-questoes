@@ -733,7 +733,7 @@ input[type=file]{font-size:13px}
         <li>Entre com uma <strong>conta Google</strong>. Serve o Gmail pessoal. Se a conta da escola estiver bloqueada pelo administrador, use a pessoal.</li>
         <li>Aceite os termos de uso na primeira vez.</li>
         <li>Clique em <strong>Criar chave de API</strong> e, se pedir, deixe criar um projeto novo.</li>
-        <li>Copie a chave gerada — ela começa com <strong>AIza</strong> — e cole no campo acima.</li>
+        <li>Copie a chave gerada — ela começa com <strong>AQ.</strong> (ou <strong>AIza</strong>, nas mais antigas) — e cole no campo acima.</li>
         <li>Clique em <strong>Salvar chave</strong>, depois em <strong>Testar conexão</strong> e, por fim, em <strong>Buscar modelos</strong>.</li>
       </ol>
       <p class="ajuda" style="margin-top:12px">A chave é gratuita, com um limite diário de uso por conta — por isso cada professor deve ter a sua, em vez de dividirem uma só. Trate-a como senha: quem tiver a chave usa a sua cota. Se vazar, apague-a no mesmo endereço e crie outra.</p>
@@ -777,9 +777,9 @@ input[type=file]{font-size:13px}
       <li><button class="botao" type="button" id="btn-abrir-aistudio">Abrir o site da chave</button> <span class="ajuda">abre em outra aba</span></li>
       <li>Entre com sua <strong>conta Google</strong> (pode ser o Gmail pessoal) e aceite os termos, se pedir.</li>
       <li>Clique em <strong>Criar chave de API</strong> (ou "Create API key"). Se perguntar o projeto, deixe criar um novo.</li>
-      <li>Copie a chave. Ela começa com <strong>AIza</strong>.</li>
+      <li>Copie a chave inteira. Ela começa com <strong>AQ.</strong> (ou <strong>AIza</strong>, nas mais antigas).</li>
       <li>Volte para esta aba, cole aqui e clique em <strong>Salvar e testar</strong>:
-        <input type="password" id="chave-assistente" placeholder="Cole a chave aqui (começa com AIza)" autocomplete="off" style="margin-top:8px">
+        <input type="password" id="chave-assistente" placeholder="Cole a chave aqui" autocomplete="off" style="margin-top:8px">
       </li>
     </ol>
     <div id="retorno-assistente"></div>
@@ -1851,7 +1851,7 @@ function chamarIAComInsistencia(prompt,avisar){
 }
 function chamarGemini(prompt,modeloEscolhido,semRaciocinio){
   var modelo=modeloEscolhido||conf.modelo||"gemini-3.6-flash";
-  var url="https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(modelo)+":generateContent?key="+encodeURIComponent(conf.chave);
+  var url="https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(modelo)+":generateContent";
   var config={maxOutputTokens:32768,responseMimeType:"application/json"};
   // raciocínio profundo: nos modelos 3.x o campo é thinkingLevel; nos 2.5, thinkingBudget. Nunca os dois juntos.
   if(conf.raciocinio&&!semRaciocinio){
@@ -1860,7 +1860,8 @@ function chamarGemini(prompt,modeloEscolhido,semRaciocinio){
   }
   var espera=abrirEspera();
   return fetch(url,{
-    method:"POST",headers:{"Content-Type":"application/json"},signal:espera.sinal,
+    // a chave vai no cabeçalho, como manda a documentação: serve para o formato antigo (AIza) e o novo (AQ.)
+    method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":conf.chave},signal:espera.sinal,
     body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:config})
   }).then(function(r){espera.encerrar();return r;},function(e){espera.encerrar();throw traduzirEspera(e);}).then(tratarResposta).then(function(d){
     var c=d.candidates&&d.candidates[0];
@@ -2842,7 +2843,7 @@ $("assistente-chave").addEventListener("click",function(ev){if(ev.target===this)
 $("btn-salvar-assistente").addEventListener("click",function(){
   var chave=$("chave-assistente").value.trim().replace(/\s+/g,"");
   if(!chave){msg("retorno-assistente","Cole a chave no campo acima.","erro");return;}
-  if(!/^AIza/.test(chave)){msg("retorno-assistente","Essa não parece uma chave do Google: ela deve começar com AIza. Confira se copiou a chave inteira.","erro");return;}
+  if(chave.length<20){msg("retorno-assistente","A chave parece incompleta. Confira se copiou a chave inteira.","erro");return;}
   var antes={provedor:conf.provedor,modelo:conf.modelo,chave:conf.chave};
   conf.provedor="gemini";
   if(!conf.modelo||/^claude/.test(conf.modelo))conf.modelo=PADRAO.gemini;
@@ -2869,7 +2870,7 @@ $("btn-modelos").addEventListener("click",function(){
     return;
   }
   msg("retorno-chave","Consultando…","");
-  fetch("https://generativelanguage.googleapis.com/v1beta/models?key="+encodeURIComponent(chave)+"&pageSize=200")
+  fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",{headers:{"x-goog-api-key":chave}})
   .then(tratarResposta).then(function(d){
     var nomes=(d.models||[]).filter(function(m){
       return (m.supportedGenerationMethods||[]).indexOf("generateContent")>-1;
