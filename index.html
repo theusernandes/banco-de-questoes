@@ -233,7 +233,7 @@ input[type=file]{font-size:13px}
       <div style="display:flex;align-items:center;gap:14px">
         <span id="resumo-topo">nenhuma questão arquivada</span>
         <button type="button" id="nuvem-chip" class="nuvem-chip desligada">☁ Nuvem</button>
-        <span style="font-size:11.5px;color:var(--cinza)">versão de 6 out 2026</span>
+        <span id="versao-app" style="font-size:11.5px;color:var(--cinza)">versão de 7 out 2026</span>
       </div>
     </div>
     <nav class="abas" role="tablist">
@@ -4324,6 +4324,15 @@ function classificarMatriz(lista,aoProgresso){
   for(var i=0;i<PARALELAS;i++)frentes.push(lote());
   return Promise.all(frentes).then(function(){});
 }
+
+/* data da versão no topo: o servidor informa quando o arquivo foi publicado */
+(function(){
+  var d=new Date(document.lastModified), el=$("versao-app");
+  if(!el||isNaN(d)||d.getFullYear()<2026)return;
+  var meses=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+  el.textContent="versão de "+d.getDate()+" "+meses[d.getMonth()]+" "+d.getFullYear();
+  el.title="Publicada em "+d.toLocaleString("pt-BR");
+})();
 
 /* busca por tema amplo */
 function semAcento(t){return String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();}
