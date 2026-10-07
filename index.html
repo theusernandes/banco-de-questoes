@@ -543,7 +543,7 @@ input[type=file]{font-size:13px}
     <div class="botoes">
       <button class="botao" id="btn-processar-prova">Processar prova</button>
       <label style="margin:0;display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px">
-        <input type="checkbox" id="of-classificar" checked style="width:auto;margin:0">classificar por matéria com a IA</label>
+        <input type="checkbox" id="of-classificar" checked style="width:auto;margin:0">classificar por matéria e pela matriz do ENEM com a IA</label>
       <button class="botao perigo" id="btn-cancelar-prova" style="display:none">Cancelar</button>
     </div>
     <div id="progresso-prova" class="progresso"></div>
@@ -574,10 +574,24 @@ input[type=file]{font-size:13px}
       </div>
     </div>
     <p class="ajuda nota-hab">A busca por tema encontra questões próximas do que você digitou, mesmo com outras palavras — útil quando o capítulo do livro traz só um título.</p>
+    <div class="linha">
+      <div>
+        <label for="filtro-area-enem">Matriz do ENEM: área</label>
+        <select id="filtro-area-enem"><option value="">Todas as áreas</option></select>
+      </div>
+      <div>
+        <label for="filtro-comp-enem">Competência</label>
+        <select id="filtro-comp-enem"><option value="">Todas as competências</option></select>
+      </div>
+    </div>
+    <label for="filtro-hab-enem">Habilidade</label>
+    <select id="filtro-hab-enem"><option value="">Todas as habilidades</option></select>
+    <p class="ajuda nota-hab" id="texto-matriz-enem"></p>
     <div class="botoes" style="margin-top:6px">
       <button class="botao secundario" id="btn-marcar-oficiais">Selecionar todas as do filtro</button>
       <button class="botao secundario" id="btn-limpar-oficiais">Limpar seleção</button>
       <button class="botao secundario" id="btn-classificar-prova">Classificar por matéria</button>
+      <button class="botao secundario" id="btn-matriz-prova">Classificar pela matriz do ENEM</button>
       <button class="botao perigo" id="btn-apagar-prova">Apagar esta prova</button>
     </div>
     <p class="contador" id="contador-oficiais"></p>
@@ -4189,14 +4203,18 @@ function classificarQuestoes(lista,aoProgresso){
       "Questão cujo texto-base está em inglês ou espanhol é SEMPRE de Língua Inglesa ou Língua Espanhola, mesmo que o tema seja filosofia, história ou outro.",
       "O campo n é o número entre colchetes que antecede cada questão abaixo.",
       "O assunto é um rótulo curto de 2 a 5 palavras, como um professor nomearia o conteúdo em sala.",
-      "As palavras-chave são de 4 a 8 termos que ajudem a achar a questão por tema amplo, incluindo conceitos vizinhos.",
+      "As palavras-chave são de 4 a 8 termos que ajudem a achar a questão por tema amplo, incluindo conceitos vizinhos."
+    ].concat(REGRAS_MATRIZ).concat([
       "",
       "Responda APENAS um array JSON:",
-      '[{"n":46,"materias":["História"],"assunto":"Partilha da África","palavras":["imperialismo","colonialismo"]}]',
+      '[{"n":46,"materias":["História"],"assunto":"Partilha da África","palavras":["imperialismo","colonialismo"],"hab":"CH-H7"}]',
+      "",
+      "HABILIDADES DA MATRIZ:",
+      habilidadesParaIA(null),
       "",
       "QUESTÕES:",
       grupo.map(function(q,k){return "["+(k+1)+"] "+resumoParaClassificar(q);}).join("\n\n")
-    ].join("\n");
+    ]).join("\n");
     return chamarIAComInsistencia(pedido,function(aviso){aoProgresso(aviso);}).then(function(resp){
       extrairArray(resp).forEach(function(d){
         var alvo=grupo[Number(d.n)-1];
@@ -4204,12 +4222,101 @@ function classificarQuestoes(lista,aoProgresso){
         alvo.materias=(Array.isArray(d.materias)?d.materias:[d.materia||""]).filter(Boolean);
         alvo.assunto=String(d.assunto||"").trim();
         alvo.palavras=(Array.isArray(d.palavras)?d.palavras:[]).map(String);
+        var cod=codigoHabilidade(d.hab);
+        if(cod)alvo.matriz=cod;
         // questão de língua estrangeira é da língua, qualquer que seja o tema do texto
         if(alvo.variante==="Inglês")alvo.materias=["Língua Inglesa"];
         if(alvo.variante==="Espanhol")alvo.materias=["Língua Espanhola"];
       });
       feitas+=grupo.length;
       aoProgresso("Classificando: "+Math.min(feitas,total)+" de "+total+" questões…");
+      return lote();
+    });
+  }
+  var frentes=[];
+  for(var i=0;i<PARALELAS;i++)frentes.push(lote());
+  return Promise.all(frentes).then(function(){});
+}
+
+/* ===================== MATRIZ DE REFERÊNCIA DO ENEM =====================
+   Texto oficial do INEP (fontes/matriz_referencia_ENEM.pdf): quatro áreas,
+   competências de área e 30 habilidades em cada. Cada questão das provas
+   oficiais guarda o código da habilidade ("CH-H11"); a competência sai daqui. */
+var MATRIZ_ENEM=[{"s":"LC","nome":"Linguagens, Códigos e suas Tecnologias","c":[{"t":"Aplicar as tecnologias da comunicação e da informação na escola, no trabalho e em outros contextos relevantes para sua vida.","h":[[1,"Identificar as diferentes linguagens e seus recursos expressivos como elementos de caracterização dos sistemas de comunicação."],[2,"Recorrer aos conhecimentos sobre as linguagens dos sistemas de comunicação e informação para resolver problemas sociais."],[3,"Relacionar informações geradas nos sistemas de comunicação e informação, considerando a função social desses sistemas."],[4,"Reconhecer posições críticas aos usos sociais que são feitos das linguagens e dos sistemas de comunicação e informação."]]},{"t":"Conhecer e usar língua(s) estrangeira(s) moderna(s) como instrumento de acesso a informações e a outras culturas e grupos sociais.","h":[[5,"Associar vocábulos e expressões de um texto em LEM ao seu tema."],[6,"Utilizar os conhecimentos da LEM e de seus mecanismos como meio de ampliar as possibilidades de acesso a informações, tecnologias e culturas."],[7,"Relacionar um texto em LEM, as estruturas linguísticas, sua função e seu uso social."],[8,"Reconhecer a importância da produção cultural em LEM como representação da diversidade cultural e linguística."]]},{"t":"Compreender e usar a linguagem corporal como relevante para a própria vida, integradora social e formadora da identidade.","h":[[9,"Reconhecer as manifestações corporais de movimento como originárias de necessidades cotidianas de um grupo social."],[10,"Reconhecer a necessidade de transformação de hábitos corporais em função das necessidades cinestésicas."],[11,"Reconhecer a linguagem corporal como meio de interação social, considerando os limites de desempenho e as alternativas de adaptação para diferentes indivíduos."]]},{"t":"Compreender a arte como saber cultural e estético gerador de significação e integrador da organização do mundo e da própria identidade.","h":[[12,"Reconhecer diferentes funções da arte, do trabalho da produção dos artistas em seus meios culturais."],[13,"Analisar as diversas produções artísticas como meio de explicar diferentes culturas, padrões de beleza e preconceitos."],[14,"Reconhecer o valor da diversidade artística e das inter-relações de elementos que se apresentam nas manifestações de vários grupos sociais e étnicos."]]},{"t":"Analisar, interpretar e aplicar recursos expressivos das linguagens, relacionando textos com seus contextos, mediante a natureza, função, organização, estrutura das manifestações, de acordo com as condições de produção e recepção.","h":[[15,"Estabelecer relações entre o texto literário e o momento de sua produção, situando aspectos do contexto histórico, social e político."],[16,"Relacionar informações sobre concepções artísticas e procedimentos de construção do texto literário."],[17,"Reconhecer a presença de valores sociais e humanos atualizáveis e permanentes no patrimônio literário nacional."]]},{"t":"Compreender e usar os sistemas simbólicos das diferentes linguagens como meios de organização cognitiva da realidade pela constituição de significados, expressão, comunicação e informação.","h":[[18,"Identificar os elementos que concorrem para a progressão temática e para a organização e estruturação de textos de diferentes gêneros e tipos."],[19,"Analisar a função da linguagem predominante nos textos em situações específicas de interlocução."],[20,"Reconhecer a importância do patrimônio linguístico para a preservação da memória e da identidade nacional."]]},{"t":"Confrontar opiniões e pontos de vista sobre as diferentes linguagens e suas manifestações específicas.","h":[[21,"Reconhecer em textos de diferentes gêneros, recursos verbais e não-verbais utilizados com a finalidade de criar e mudar comportamentos e hábitos."],[22,"Relacionar, em diferentes textos, opiniões, temas, assuntos e recursos linguísticos."],[23,"Inferir em um texto quais são os objetivos de seu produtor e quem é seu público alvo, pela análise dos procedimentos argumentativos utilizados."],[24,"Reconhecer no texto estratégias argumentativas empregadas para o convencimento do público, tais como a intimidação, sedução, comoção, chantagem, entre outras."]]},{"t":"Compreender e usar a língua portuguesa como língua materna, geradora de significação e integradora da organização do mundo e da própria identidade.","h":[[25,"Identificar, em textos de diferentes gêneros, as marcas linguísticas que singularizam as variedades linguísticas sociais, regionais e de registro."],[26,"Relacionar as variedades linguísticas a situações específicas de uso social."],[27,"Reconhecer os usos da norma padrão da língua portuguesa nas diferentes situações de comunicação."]]},{"t":"Entender os princípios, a natureza, a função e o impacto das tecnologias da comunicação e da informação na sua vida pessoal e social, no desenvolvimento do conhecimento, associando-o aos conhecimentos científicos, às linguagens que lhes dão suporte, às demais tecnologias, aos processos de produção e aos problemas que se propõem solucionar.","h":[[28,"Reconhecer a função e o impacto social das diferentes tecnologias da comunicação e informação."],[29,"Identificar pela análise de suas linguagens, as tecnologias da comunicação e informação."],[30,"Relacionar as tecnologias de comunicação e informação ao desenvolvimento das sociedades e ao conhecimento que elas produzem."]]}]},
+{"s":"MT","nome":"Matemática e suas Tecnologias","c":[{"t":"Construir significados para os números naturais, inteiros, racionais e reais.","h":[[1,"Reconhecer, no contexto social, diferentes significados e representações dos números e operações - naturais, inteiros, racionais ou reais."],[2,"Identificar padrões numéricos ou princípios de contagem."],[3,"Resolver situação-problema envolvendo conhecimentos numéricos."],[4,"Avaliar a razoabilidade de um resultado numérico na construção de argumentos sobre afirmações quantitativas."],[5,"Avaliar propostas de intervenção na realidade utilizando conhecimentos numéricos."]]},{"t":"Utilizar o conhecimento geométrico para realizar a leitura e a representação da realidade e agir sobre ela.","h":[[6,"Interpretar a localização e a movimentação de pessoas/objetos no espaço tridimensional e sua representação no espaço bidimensional."],[7,"Identificar características de figuras planas ou espaciais."],[8,"Resolver situação-problema que envolva conhecimentos geométricos de espaço e forma."],[9,"Utilizar conhecimentos geométricos de espaço e forma na seleção de argumentos propostos como solução de problemas do cotidiano."]]},{"t":"Construir noções de grandezas e medidas para a compreensão da realidade e a solução de problemas do cotidiano.","h":[[10,"Identificar relações entre grandezas e unidades de medida."],[11,"Utilizar a noção de escalas na leitura de representação de situação do cotidiano."],[12,"Resolver situação-problema que envolva medidas de grandezas."],[13,"Avaliar o resultado de uma medição na construção de um argumento consistente."],[14,"Avaliar proposta de intervenção na realidade utilizando conhecimentos geométricos relacionados a grandezas e medidas."]]},{"t":"Construir noções de variação de grandezas para a compreensão da realidade e a solução de problemas do cotidiano.","h":[[15,"Identificar a relação de dependência entre grandezas."],[16,"Resolver situação-problema envolvendo a variação de grandezas, direta ou inversamente proporcionais."],[17,"Analisar informações envolvendo a variação de grandezas como recurso para a construção de argumentação."],[18,"Avaliar propostas de intervenção na realidade envolvendo variação de grandezas."]]},{"t":"Modelar e resolver problemas que envolvem variáveis socioeconômicas ou técnico-científicas, usando representações algébricas.","h":[[19,"Identificar representações algébricas que expressem a relação entre grandezas."],[20,"Interpretar gráfico cartesiano que represente relações entre grandezas."],[21,"Resolver situação-problema cuja modelagem envolva conhecimentos algébricos."],[22,"Utilizar conhecimentos algébricos/geométricos como recurso para a construção de argumentação."],[23,"Avaliar propostas de intervenção na realidade utilizando conhecimentos algébricos."]]},{"t":"Interpretar informações de natureza científica e social obtidas da leitura de gráficos e tabelas, realizando previsão de tendência, extrapolação, interpolação e interpretação.","h":[[24,"Utilizar informações expressas em gráficos ou tabelas para fazer inferências."],[25,"Resolver problema com dados apresentados em tabelas ou gráficos."],[26,"Analisar informações expressas em gráficos ou tabelas como recurso para a construção de argumentos."]]},{"t":"Compreender o caráter aleatório e não-determinístico dos fenômenos naturais e sociais e utilizar instrumentos adequados para medidas, determinação de amostras e cálculos de probabilidade para interpretar informações de variáveis apresentadas em uma distribuição estatística.","h":[[27,"Calcular medidas de tendência central ou de dispersão de um conjunto de dados expressos em uma tabela de frequências de dados agrupados (não em classes) ou em gráficos."],[28,"Resolver situação-problema que envolva conhecimentos de estatística e probabilidade."],[29,"Utilizar conhecimentos de estatística e probabilidade como recurso para a construção de argumentação."],[30,"Avaliar propostas de intervenção na realidade utilizando conhecimentos de estatística e probabilidade."]]}]},
+{"s":"CN","nome":"Ciências da Natureza e suas Tecnologias","c":[{"t":"Compreender as ciências naturais e as tecnologias a elas associadas como construções humanas, percebendo seus papéis nos processos de produção e no desenvolvimento econômico e social da humanidade.","h":[[1,"Reconhecer características ou propriedades de fenômenos ondulatórios ou oscilatórios, relacionando-os a seus usos em diferentes contextos."],[2,"Associar a solução de problemas de comunicação, transporte, saúde ou outro, com o correspondente desenvolvimento científico e tecnológico."],[3,"Confrontar interpretações científicas com interpretações baseadas no senso comum, ao longo do tempo ou em diferentes culturas."],[4,"Avaliar propostas de intervenção no ambiente, considerando a qualidade da vida humana ou medidas de conservação, recuperação ou utilização sustentável da biodiversidade."]]},{"t":"Identificar a presença e aplicar as tecnologias associadas às ciências naturais em diferentes contextos.","h":[[5,"Dimensionar circuitos ou dispositivos elétricos de uso cotidiano."],[6,"Relacionar informações para compreender manuais de instalação ou utilização de aparelhos, ou sistemas tecnológicos de uso comum."],[7,"Selecionar testes de controle, parâmetros ou critérios para a comparação de materiais e produtos, tendo em vista a defesa do consumidor, a saúde do trabalhador ou a qualidade de vida."]]},{"t":"Associar intervenções que resultam em degradação ou conservação ambiental a processos produtivos e sociais e a instrumentos ou ações científico-tecnológicos.","h":[[8,"Identificar etapas em processos de obtenção, transformação, utilização ou reciclagem de recursos naturais, energéticos ou matérias-primas, considerando processos biológicos, químicos ou físicos neles envolvidos."],[9,"Compreender a importância dos ciclos biogeoquímicos ou do fluxo energia para a vida, ou da ação de agentes ou fenômenos que podem causar alterações nesses processos."],[10,"Analisar perturbações ambientais, identificando fontes, transporte e(ou) destino dos poluentes ou prevendo efeitos em sistemas naturais, produtivos ou sociais."],[11,"Reconhecer benefícios, limitações e aspectos éticos da biotecnologia, considerando estruturas e processos biológicos envolvidos em produtos biotecnológicos."],[12,"Avaliar impactos em ambientes naturais decorrentes de atividades sociais ou econômicas, considerando interesses contraditórios."]]},{"t":"Compreender interações entre organismos e ambiente, em particular aquelas relacionadas à saúde humana, relacionando conhecimentos científicos, aspectos culturais e características individuais.","h":[[13,"Reconhecer mecanismos de transmissão da vida, prevendo ou explicando a manifestação de características dos seres vivos."],[14,"Identificar padrões em fenômenos e processos vitais dos organismos, como manutenção do equilíbrio interno, defesa, relações com o ambiente, sexualidade, entre outros."],[15,"Interpretar modelos e experimentos para explicar fenômenos ou processos biológicos em qualquer nível de organização dos sistemas biológicos."],[16,"Compreender o papel da evolução na produção de padrões, processos biológicos ou na organização taxonômica dos seres vivos."]]},{"t":"Entender métodos e procedimentos próprios das ciências naturais e aplicá-los em diferentes contextos.","h":[[17,"Relacionar informações apresentadas em diferentes formas de linguagem e representação usadas nas ciências físicas, químicas ou biológicas, como texto discursivo, gráficos, tabelas, relações matemáticas ou linguagem simbólica."],[18,"Relacionar propriedades físicas, químicas ou biológicas de produtos, sistemas ou procedimentos tecnológicos às finalidades a que se destinam."],[19,"Avaliar métodos, processos ou procedimentos das ciências naturais que contribuam para diagnosticar ou solucionar problemas de ordem social, econômica ou ambiental."]]},{"t":"Apropriar-se de conhecimentos da física para, em situações problema, interpretar, avaliar ou planejar intervenções científico-tecnológicas.","h":[[20,"Caracterizar causas ou efeitos dos movimentos de partículas, substâncias, objetos ou corpos celestes."],[21,"Utilizar leis físicas e (ou) químicas para interpretar processos naturais ou tecnológicos inseridos no contexto da termodinâmica e(ou) do eletromagnetismo."],[22,"Compreender fenômenos decorrentes da interação entre a radiação e a matéria em suas manifestações em processos naturais ou tecnológicos, ou em suas implicações biológicas, sociais, econômicas ou ambientais."],[23,"Avaliar possibilidades de geração, uso ou transformação de energia em ambientes específicos, considerando implicações éticas, ambientais, sociais e/ou econômicas."]]},{"t":"Apropriar-se de conhecimentos da química para, em situações problema, interpretar, avaliar ou planejar intervenções científico-tecnológicas.","h":[[24,"Utilizar códigos e nomenclatura da química para caracterizar materiais, substâncias ou transformações químicas."],[25,"Caracterizar materiais ou substâncias, identificando etapas, rendimentos ou implicações biológicas, sociais, econômicas ou ambientais de sua obtenção ou produção."],[26,"Avaliar implicações sociais, ambientais e/ou econômicas na produção ou no consumo de recursos energéticos ou minerais, identificando transformações químicas ou de energia envolvidas nesses processos."],[27,"Avaliar propostas de intervenção no meio ambiente aplicando conhecimentos químicos, observando riscos ou benefícios."]]},{"t":"Apropriar-se de conhecimentos da biologia para, em situações problema, interpretar, avaliar ou planejar intervenções científico-tecnológicas.","h":[[28,"Associar características adaptativas dos organismos com seu modo de vida ou com seus limites de distribuição em diferentes ambientes, em especial em ambientes brasileiros."],[29,"Interpretar experimentos ou técnicas que utilizam seres vivos, analisando implicações para o ambiente, a saúde, a produção de alimentos, matérias primas ou produtos industriais."],[30,"Avaliar propostas de alcance individual ou coletivo, identificando aquelas que visam à preservação e a implementação da saúde individual, coletiva ou do ambiente."]]}]},
+{"s":"CH","nome":"Ciências Humanas e suas Tecnologias","c":[{"t":"Compreender os elementos culturais que constituem as identidades","h":[[1,"Interpretar historicamente e/ou geograficamente fontes documentais acerca de aspectos da cultura."],[2,"Analisar a produção da memória pelas sociedades humanas."],[3,"Associar as manifestações culturais do presente aos seus processos históricos."],[4,"Comparar pontos de vista expressos em diferentes fontes sobre determinado aspecto da cultura."],[5,"Identificar as manifestações ou representações da diversidade do patrimônio cultural e artístico em diferentes sociedades."]]},{"t":"Compreender as transformações dos espaços geográficos como produto das relações socioeconômicas e culturais de poder.","h":[[6,"Interpretar diferentes representações gráficas e cartográficas dos espaços geográficos."],[7,"Identificar os significados histórico-geográficos das relações de poder entre as nações"],[8,"Analisar a ação dos estados nacionais no que se refere à dinâmica dos fluxos populacionais e no enfrentamento de problemas de ordem econômico-social."],[9,"Comparar o significado histórico-geográfico das organizações políticas e socioeconômicas em escala local, regional ou mundial."],[10,"Reconhecer a dinâmica da organização dos movimentos sociais e a importância da participação da coletividade na transformação da realidade histórico-geográfica."]]},{"t":"Compreender a produção e o papel histórico das instituições sociais, políticas e econômicas, associando-as aos diferentes grupos, conflitos e movimentos sociais.","h":[[11,"Identificar registros de práticas de grupos sociais no tempo e no espaço."],[12,"Analisar o papel da justiça como instituição na organização das sociedades."],[13,"Analisar a atuação dos movimentos sociais que contribuíram para mudanças ou rupturas em processos de disputa pelo poder."],[14,"Comparar diferentes pontos de vista, presentes em textos analíticos e interpretativos, sobre situação ou fatos de natureza histórico-geográfica acerca das instituições sociais, políticas e econômicas."],[15,"Avaliar criticamente conflitos culturais, sociais, políticos, econômicos ou ambientais ao longo da história."]]},{"t":"Entender as transformações técnicas e tecnológicas e seu impacto nos processos de produção, no desenvolvimento do conhecimento e na vida social.","h":[[16,"Identificar registros sobre o papel das técnicas e tecnologias na organização do trabalho e/ou da vida social."],[17,"Analisar fatores que explicam o impacto das novas tecnologias no processo de territorialização da produção."],[18,"Analisar diferentes processos de produção ou circulação de riquezas e suas implicações sócio-espaciais."],[19,"Reconhecer as transformações técnicas e tecnológicas que determinam as várias formas de uso e apropriação dos espaços rural e urbano."],[20,"Selecionar argumentos favoráveis ou contrários às modificações impostas pelas novas tecnologias à vida social e ao mundo do trabalho."]]},{"t":"Utilizar os conhecimentos históricos para compreender e valorizar os fundamentos da cidadania e da democracia, favorecendo uma atuação consciente do indivíduo na sociedade.","h":[[21,"Identificar o papel dos meios de comunicação na construção da vida social."],[22,"Analisar as lutas sociais e conquistas obtidas no que se refere às mudanças nas legislações ou nas políticas públicas."],[23,"Analisar a importância dos valores éticos na estruturação política das sociedades."],[24,"Relacionar cidadania e democracia na organização das sociedades."],[25,"Identificar estratégias que promovam formas de inclusão social."]]},{"t":"Compreender a sociedade e a natureza, reconhecendo suas interações no espaço em diferentes contextos históricos e geográficos.","h":[[26,"Identificar em fontes diversas o processo de ocupação dos meios físicos e as relações da vida humana com a paisagem."],[27,"Analisar de maneira crítica as interações da sociedade com o meio físico, levando em consideração aspectos históricos e(ou) geográficos."],[28,"Relacionar o uso das tecnologias com os impactos sócio-ambientais em diferentes contextos histórico-geográficos."],[29,"Reconhecer a função dos recursos naturais na produção do espaço geográfico, relacionando-os com as mudanças provocadas pelas ações humanas."],[30,"Avaliar as relações entre preservação e degradação da vida no planeta nas diferentes escalas. ANEXO"]]}]}];
+var NOMES_AREA_ENEM={LC:"Linguagens",MT:"Matemática",CN:"Ciências da Natureza",CH:"Ciências Humanas"};
+var AREA_DA_MATERIA={"Língua Portuguesa":"LC","Literatura":"LC","Língua Inglesa":"LC","Língua Espanhola":"LC",
+  "Arte":"LC","Educação Física":"LC","História":"CH","Geografia":"CH","Filosofia":"CH","Sociologia":"CH",
+  "Matemática":"MT","Física":"CN","Química":"CN","Biologia":"CN"};
+var HAB_ENEM=(function(){
+  var mapa={};
+  MATRIZ_ENEM.forEach(function(a){
+    a.c.forEach(function(c,i){
+      c.h.forEach(function(h){
+        mapa[a.s+"-H"+h[0]]={area:a.s,c:i+1,h:h[0],texto:h[1],competencia:c.t};
+      });
+    });
+  });
+  return mapa;
+})();
+/* aceita "CH-H11", "CH H11", "ch-h11" e devolve o código no formato guardado */
+function codigoHabilidade(bruto){
+  var m=String(bruto||"").toUpperCase().match(/\b(LC|MT|CN|CH)\W*H\s*0*(\d{1,2})\b/);
+  if(!m)return "";
+  var cod=m[1]+"-H"+Number(m[2]);
+  return HAB_ENEM[cod]?cod:"";
+}
+function rotuloHabilidade(cod){
+  var x=HAB_ENEM[cod];
+  return x?x.area+" · C"+x.c+" · H"+x.h:"";
+}
+function habilidadesParaIA(areas){
+  return MATRIZ_ENEM.filter(function(a){return !areas||areas.indexOf(a.s)>=0;}).map(function(a){
+    return a.nome+":\n"+a.c.map(function(c,i){
+      return c.h.map(function(h){return a.s+"-H"+h[0]+" (C"+(i+1)+"): "+h[1];}).join("\n");
+    }).join("\n");
+  }).join("\n\n");
+}
+var REGRAS_MATRIZ=[
+  "Indique também a habilidade da Matriz de Referência do ENEM que a questão mais avalia, no campo hab, com o código exato da lista (por exemplo CH-H11).",
+  "A área da habilidade acompanha a matéria: Linguagens (LC) para português, literatura, línguas estrangeiras, arte e educação física; Matemática (MT); Ciências da Natureza (CN) para física, química e biologia; Ciências Humanas (CH) para história, geografia, filosofia e sociologia.",
+  "Escolha pela ação que o aluno precisa fazer para acertar (identificar, analisar, comparar, avaliar...), não só pelo tema."
+];
+/* para provas já importadas: só a habilidade, com a matéria já conhecida ajudando a escolher a área */
+function classificarMatriz(lista,aoProgresso){
+  var pendentes=lista.filter(function(q){return q.texto;}), feitas=0, total=pendentes.length;
+  var PARALELAS=3;
+  function lote(){
+    if(!pendentes.length||cancelado||paradaGeral)return Promise.resolve();
+    var grupo=pendentes.splice(0,25);
+    var areas={};
+    grupo.forEach(function(q){(q.materias||[]).forEach(function(m){if(AREA_DA_MATERIA[m])areas[AREA_DA_MATERIA[m]]=1;});});
+    var usadas=Object.keys(areas);
+    var pedido=[
+      "Você recebe questões de uma prova oficial já aplicada. NÃO reescreva, não crie e não corrija nada."
+    ].concat(REGRAS_MATRIZ).concat([
+      "O campo n é o número entre colchetes que antecede cada questão abaixo.",
+      "",
+      "Responda APENAS um array JSON:",
+      '[{"n":1,"hab":"CH-H11"}]',
+      "",
+      "HABILIDADES DA MATRIZ:",
+      habilidadesParaIA(usadas.length?usadas:null),
+      "",
+      "QUESTÕES:",
+      grupo.map(function(q,k){
+        return "["+(k+1)+"]"+((q.materias||[]).length?" ("+q.materias.join(", ")+")":"")+" "+resumoParaClassificar(q);
+      }).join("\n\n")
+    ]).join("\n");
+    return chamarIAComInsistencia(pedido,function(aviso){aoProgresso(aviso);}).then(function(resp){
+      extrairArray(resp).forEach(function(d){
+        var alvo=grupo[Number(d.n)-1], cod=codigoHabilidade(d.hab);
+        if(alvo&&cod)alvo.matriz=cod;
+      });
+      feitas+=grupo.length;
+      aoProgresso("Classificando pela matriz do ENEM: "+Math.min(feitas,total)+" de "+total+" questões…");
       return lote();
     });
   }
@@ -4272,6 +4379,50 @@ function preencherFiltrosOficiais(){
   var listaMaterias=Object.keys(materias).sort(function(a,b){return a.localeCompare(b,"pt-BR");});
   encher("filtro-materia",listaMaterias,"Todas as matérias");
   atualizarAssuntos();
+  atualizarFiltrosMatriz();
+}
+/* filtros da matriz do ENEM: área › competência › habilidade.
+   Mostram a matriz inteira, com quantas questões da prova há em cada item,
+   para quem trabalha uma habilidade saber logo se a prova tem ou não.      */
+function atualizarFiltrosMatriz(){
+  var questoes=provaAtual?provaAtual.questoes:[];
+  var conta={};
+  questoes.forEach(function(q){
+    var x=HAB_ENEM[q.matriz];
+    if(!x)return;
+    [x.area,x.area+"-C"+x.c,q.matriz].forEach(function(k){conta[k]=(conta[k]||0)+1;});
+  });
+  function n(k){return conta[k]?" ("+conta[k]+")":" (nenhuma)";}
+  function curto(t){return t.length>95?t.slice(0,92).replace(/\s+\S*$/,"")+"…":t;}
+  function encher(sel,rotulo,itens){
+    var atual=sel.value;
+    sel.innerHTML='<option value="">'+rotulo+"</option>"+itens.map(function(it){
+      return '<option value="'+it.v+'">'+esc(it.t)+"</option>";}).join("");
+    sel.value=itens.some(function(it){return it.v===atual;})?atual:"";
+  }
+  encher($("filtro-area-enem"),"Todas as áreas",MATRIZ_ENEM.map(function(a){
+    return {v:a.s,t:NOMES_AREA_ENEM[a.s]+n(a.s)};}));
+  var area=$("filtro-area-enem").value;
+  var matriz=MATRIZ_ENEM.filter(function(a){return a.s===area;})[0];
+  $("filtro-comp-enem").disabled=$("filtro-hab-enem").disabled=!matriz;
+  encher($("filtro-comp-enem"),matriz?"Todas as competências":"Escolha a área primeiro",
+    matriz?matriz.c.map(function(c,i){return {v:String(i+1),t:"C"+(i+1)+" — "+curto(c.t)+n(area+"-C"+(i+1))};}):[]);
+  var comp=$("filtro-comp-enem").value;
+  var habs=[];
+  if(matriz)matriz.c.forEach(function(c,i){
+    if(comp&&String(i+1)!==comp)return;
+    c.h.forEach(function(x){habs.push({v:area+"-H"+x[0],t:"H"+x[0]+" — "+curto(x[1])+n(area+"-H"+x[0])});});
+  });
+  encher($("filtro-hab-enem"),matriz?"Todas as habilidades":"Escolha a área primeiro",habs);
+  // o texto completo do que foi escolhido, porque a lista corta as frases longas
+  var hab=$("filtro-hab-enem").value, nota="";
+  if(hab)nota="<strong>"+rotuloHabilidade(hab)+"</strong> — "+esc(HAB_ENEM[hab].texto);
+  else if(matriz&&comp)nota="<strong>Competência "+comp+"</strong> — "+esc(matriz.c[comp-1].t);
+  var sem=questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];}).length;
+  if(provaAtual&&sem)nota+=(nota?"<br>":"")+(sem===questoes.length
+    ? "Esta prova ainda não foi classificada pela matriz. Use o botão <strong>Classificar pela matriz do ENEM</strong>."
+    : sem+" questões desta prova ainda estão sem a matriz. Use o botão <strong>Classificar pela matriz do ENEM</strong>.");
+  $("texto-matriz-enem").innerHTML=nota;
 }
 /* os assuntos mostrados são só os que existem na matéria escolhida,
    e sempre os da prova aberta — nunca sobras de provas apagadas */
@@ -4291,10 +4442,17 @@ function atualizarAssuntos(){
 function oficiaisFiltradas(){
   if(!provaAtual)return [];
   var mat=$("filtro-materia").value, ass=$("filtro-assunto").value;
+  var area=$("filtro-area-enem").value, comp=$("filtro-comp-enem").value, hab=$("filtro-hab-enem").value;
   var termos=semAcento($("busca-tema").value).split(/[^a-z0-9]+/).filter(function(t){return t.length>2;});
   var lista=provaAtual.questoes.filter(function(q){
     if(mat&&(q.materias||[]).indexOf(mat)<0)return false;
     if(ass&&q.assunto!==ass)return false;
+    if(area){
+      var x=HAB_ENEM[q.matriz];
+      if(!x||x.area!==area)return false;
+      if(comp&&String(x.c)!==comp)return false;
+      if(hab&&q.matriz!==hab)return false;
+    }
     return true;
   });
   if(termos.length){
@@ -4347,12 +4505,13 @@ function renderOficiais(){
   $("contador-oficiais").textContent=lista.length+" de "+provaAtual.questoes.length+" questões no filtro"+
     (lista.length>visiveisOficiais?" — mostrando as "+visiveisOficiais+" primeiras":"");
   if(!lista.length){
-    alvo.innerHTML='<div class="vazio"><strong>Nada encontrado</strong>Troque a matéria, o assunto ou o tema buscado.</div>';
+    alvo.innerHTML='<div class="vazio"><strong>Nada encontrado</strong>Troque a matéria, o assunto, a habilidade ou o tema buscado.</div>';
     atualizarBarraOficiais();return;
   }
   alvo.innerHTML=lista.slice(0,visiveisOficiais).map(function(q){
     var etiquetas=(q.materias||[]).map(function(m){return '<span class="tag tipo">'+esc(m)+"</span>";}).join("")+
       (q.assunto?'<span class="tag habilidade">'+esc(q.assunto)+"</span>":"")+
+      (HAB_ENEM[q.matriz]?'<span class="tag habilidade" title="'+esc(HAB_ENEM[q.matriz].texto)+'">ENEM '+rotuloHabilidade(q.matriz)+"</span>":"")+
       '<span class="tag">questão '+q.numero+(q.variante?" · "+q.variante.toLowerCase():"")+"</span>"+
       '<span class="tag">página '+q.pagina+"</span>"+
       (q.temFigura?'<span class="tag habilidade">com figura</span>':"")+
@@ -4541,6 +4700,11 @@ $("filtro-materia").addEventListener("change",function(){
 $("filtro-assunto").addEventListener("change",function(){
   visiveisOficiais=PASSO_OFICIAIS;renderOficiais();
 });
+["filtro-area-enem","filtro-comp-enem","filtro-hab-enem"].forEach(function(qual){
+  $(qual).addEventListener("change",function(){
+    atualizarFiltrosMatriz();visiveisOficiais=PASSO_OFICIAIS;renderOficiais();
+  });
+});
 var esperaTema=null;
 $("busca-tema").addEventListener("input",function(){
   clearTimeout(esperaTema);esperaTema=setTimeout(renderOficiais,250);
@@ -4583,6 +4747,35 @@ $("btn-classificar-prova").addEventListener("click",function(){
     })
     .then(function(){
       botao.disabled=false;botao.textContent="Classificar por matéria";
+      $("progresso-prova").className="progresso";
+    });
+});
+$("btn-matriz-prova").addEventListener("click",function(){
+  if(!provaAtual){msg("retorno-prova","Escolha uma prova primeiro.","erro");return;}
+  if(!conf.chave){msg("retorno-prova","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
+  var pendentes=provaAtual.questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];});
+  if(!pendentes.length){msg("retorno-prova","Todas as questões desta prova já têm a habilidade da matriz do ENEM.","ok");return;}
+  var botao=this, rotulo=botao.textContent;
+  botao.disabled=true;botao.textContent="Classificando…";
+  cancelado=false;
+  $("progresso-prova").className="progresso ativo";
+  $("progresso-prova").textContent="Classificando pela matriz do ENEM: 0 de "+pendentes.length+" questões…";
+  var alvo=provaAtual;
+  classificarMatriz(pendentes,function(t){$("progresso-prova").textContent=t;})
+    .then(function(){return gravarProva(alvo);})
+    .then(function(){
+      var faltam=alvo.questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];}).length;
+      var feitas=pendentes.length-faltam;
+      msg("retorno-prova",feitas+(feitas===1?" questão classificada":" questões classificadas")+" pela matriz do ENEM."+
+        (faltam?" "+(faltam===1?"Ficou 1 sem habilidade":"Ficaram "+faltam+" sem habilidade")+". Rode de novo para completar.":""),"ok");
+      return recarregarProvas();
+    })
+    .catch(function(e){
+      msg("retorno-prova","A classificação parou: "+esc(e.message||"falha")+" O que já foi classificado ficou salvo; tente de novo mais tarde.","erro");
+      return gravarProva(alvo).then(recarregarProvas);
+    })
+    .then(function(){
+      botao.disabled=false;botao.textContent=rotulo;
       $("progresso-prova").className="progresso";
     });
 });
