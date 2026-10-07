@@ -1776,7 +1776,7 @@ function esperar(ms){return new Promise(function(r){setTimeout(r,ms);});}
 function marcarRede(e){
   if(e&&(e.name==="TypeError"||/Failed to fetch|NetworkError|Load failed/i.test(e.message||""))){
     var r=new Error(navigator.onLine
-      ? "Não foi possível alcançar o provedor. A internet respondeu, mas a conexão com o serviço falhou."
+      ? "Não foi possível alcançar o Gemini. A internet funciona, mas o acesso ao serviço foi bloqueado no caminho. Costuma ser a rede (Wi-Fi da escola ou de empresa) ou um bloqueador do navegador, como o escudo do Brave. Tente com os dados móveis do celular, desligue o bloqueador para este site ou use outro navegador."
       : "Sem conexão com a internet neste momento.");
     r.rede=true;r.repetivel=true;
     return r;
