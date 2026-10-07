@@ -1783,7 +1783,10 @@ function marcarRede(e){
   }
   return e;
 }
-var abortoAtual=null, cancelado=false, esperaExpirada=false, paradaGeral="", modelosEsgotados={};
+var abortoAtual=null, cancelado=false, esperaExpirada=false, paradaGeral="", modelosEsgotados={}, modelosAusentes={}, ultimoErroIA="";
+// na camada gratuita a cota diária é contada por modelo: quando o principal e o reserva
+// esgotam ou congestionam, estes outros modelos estáveis do Gemini ainda têm a cota deles
+var MODELOS_EXTRAS_GEMINI=["gemini-3.5-flash","gemini-3.7-flash","gemini-3.8-flash","gemini-3.5-flash-lite"];
 var LIMITE_RESPOSTA=100000;   // o provedor tem 100 segundos para responder
 // sem prazo, uma requisição que o provedor aceita e não responde deixa o app parado para sempre
 function abrirEspera(){
@@ -1808,6 +1811,17 @@ function cancelarGeracao(){
   cancelado=true;
   if(abortoAtual)try{abortoAtual.abort();}catch(e){}
 }
+// quando a cota grátis acabou em todos os modelos, o texto em inglês do provedor não ajuda o professor
+function textoDaFalha(falhas){
+  var tudo=falhas.join(" · ")+" "+ultimoErroIA;
+  if(paradaGeral==="cota"||/exceeded your current quota|free_tier_requests/i.test(tudo)){
+    var h=/retry in (\d+)h/i.exec(tudo), m=/retry in (?:\d+h)?(\d+)m/i.exec(tudo);
+    var volta=h?("cerca de "+h[1]+"h"+(m&&+m[1]?(m[1].length<2?"0":"")+m[1]:"")):(m?("cerca de "+m[1]+" minutos"):"algumas horas");
+    return "A cota gratuita do dia da sua chave do Gemini acabou em todos os modelos que o site tentou. "+
+      "Ela volta sozinha em "+volta+", segundo o Google. Cada chave tem a sua cota: outro professor pode gerar com a dele enquanto isso.";
+  }
+  return "Nenhuma questão foi gerada. "+esc(falhas.length?falhas.join(" · "):ultimoErroIA);
+}
 function repetivel(e){if(cancelado||(e&&e.name==="AbortError"))return false;return !!(e&&(e.repetivel||e.name==="TypeError"));}
 function comFolga(ms){return Math.round(ms*(0.8+Math.random()*0.5));} // evita que tentativas coincidam
 function chamarIAComInsistencia(prompt,avisar){
@@ -1820,11 +1834,14 @@ function chamarIAComInsistencia(prompt,avisar){
   }else if(modelosEsgotados[principal]&&modelosEsgotados[reserva]){
     modelosEsgotados={};   // a cota pode ter voltado; recomeça a contar
   }
-  // modelo, espera antes da tentativa, rótulo
+  // modelo, espera antes da tentativa
   var plano=[[principal,0],[principal,4000]];
-  if(reserva)plano.push([reserva,0],[reserva,8000],[reserva,20000]);
-  plano.push([principal,45000]);
-  if(reserva)plano.push([reserva,45000]);
+  if(reserva)plano.push([reserva,0],[reserva,6000]);
+  var extras=conf.provedor==="gemini"?MODELOS_EXTRAS_GEMINI.filter(function(m){
+    return m!==principal&&m!==reserva&&!modelosAusentes[m]&&!modelosEsgotados[m];
+  }):[];
+  extras.forEach(function(m){plano.push([m,0]);});
+  plano.push([principal,30000]);
 
   var falhasDeRede=0, semResposta=0, modelosSemCota={};
   var distintos={};plano.forEach(function(x){distintos[x[0]]=1;});
@@ -1833,7 +1850,7 @@ function chamarIAComInsistencia(prompt,avisar){
     var modelo=plano[i][0], espera=plano[i][1];
     var passo=espera?esperar(comFolga(espera)):Promise.resolve();
     if(avisar&&i>0){
-      var trocou=reserva&&modelo===reserva&&plano[i-1][0]!==reserva;
+      var trocou=modelo!==plano[i-1][0];
       var causa=ultimo&&ultimo.semResposta
         ? "O provedor não respondeu no prazo. "
         : ultimo&&ultimo.rede
@@ -1842,12 +1859,20 @@ function chamarIAComInsistencia(prompt,avisar){
            ? "A cota do modelo anterior está esgotada. "
            : "O provedor está congestionado. ");
       avisar(causa+(trocou
-        ? ("Passando para o modelo reserva: "+modelo+".")
+        ? ("Passando para outro modelo: "+modelo+".")
         : ("Nova tentativa em "+Math.round(espera/1000)+" segundos com "+modelo+".")));
     }
     return passo.then(function(){
       return chamarIA(prompt,modelo);
     }).catch(function(e){
+      ultimoErroIA=(e&&e.message)||"";
+      // um modelo extra que não existe na conta é só pulado; o principal sem existir é erro de verdade
+      if(e&&e.semModelo&&modelo!==conf.modelo&&!cancelado){
+        modelosAusentes[modelo]=1;delete distintos[modelo];
+        var seguinte=i+1;
+        while(seguinte<plano.length&&plano[seguinte][0]===modelo)seguinte++;
+        return tentar(seguinte,ultimo);
+      }
       if(!repetivel(e))throw e;
       // sem internet, esperar não adianta: a solução está com o professor, não com o provedor
       if(e&&e.rede){
@@ -1931,7 +1956,7 @@ function tratarResposta(r){
           : "Muitas requisições em sequência. ("+det+")");
         e429.repetivel=true;e429.cota=cota;e429.status=429;throw e429;
       }
-      if(r.status===404)throw new Error("Este modelo não existe mais ou não está liberado para a sua conta. Abra Ajustes e clique em buscar modelos disponíveis. ("+det+")");
+      if(r.status===404){var e404=new Error("Este modelo não existe mais ou não está liberado para a sua conta. Abra Ajustes e clique em buscar modelos disponíveis. ("+det+")");e404.semModelo=true;throw e404;}
       var generico=new Error("Erro "+r.status+": "+det);
       generico.repetivel=passageiro;
       generico.status=r.status;
@@ -2227,8 +2252,6 @@ $("btn-gerar").addEventListener("click",function(){
   if(!navigator.onLine){msg("retorno-geracao","Seu computador está <strong>sem conexão com a internet</strong>. A geração depende do provedor de IA. Reconecte e tente de novo — nada foi perdido.","erro");return;}
   if(!conf.chave){msg("retorno-geracao","Nenhuma chave de API salva. Abra <strong>Ajustes</strong>, cole a chave e clique em testar conexão antes de gerar.","erro");abrirAssistenteChave();return;}
   if(total>20){msg("retorno-geracao","O limite é de 20 questões por geração — acima disso o provedor costuma recusar os lotes. Gere em rodadas de até 20; o banco vai acumulando.","erro");return;}
-  if(!conf.reserva&&conf.provedor==="gemini")
-    msg("retorno-geracao","Sem modelo reserva cadastrado. Se o principal estiver congestionado, cada tentativa custa quase um minuto. Vale abrir <strong>Ajustes</strong> e clicar em buscar modelos disponíveis.","");
 
   ultimoPedido=p;
   try{gravar(CHAVE_PEDIDO,JSON.stringify(p));}catch(e){}
@@ -2236,7 +2259,7 @@ $("btn-gerar").addEventListener("click",function(){
 
   rodarGeracao(p,quantidades,this,"progresso-geracao","retorno-geracao","Gerar questões",function(novas,falhas,falta,total){
     if(!novas.length){
-      msg("retorno-geracao","Nenhuma questão foi gerada. "+esc(falhas.join(" · ")),"erro");
+      msg("retorno-geracao",textoDaFalha(falhas),"erro");
       return;
     }
     var recado=novas.length+" de "+total+" "+(total===1?"questão entregue":"questões entregues")+
@@ -2768,7 +2791,7 @@ $("btn-completar").addEventListener("click",function(){
 
   rodarGeracao(p,quantidades,this,"progresso-completar","retorno-completar","Gerar e incluir na prova",function(novas,falhas,falta,total){
     if(!novas.length){
-      msg("retorno-completar","Nenhuma questão foi gerada. "+esc(falhas.join(" · ")),"erro");
+      msg("retorno-completar",textoDaFalha(falhas),"erro");
       return;
     }
     var n=0;for(var x in selecionadas)if(selecionadas[x])n++;
