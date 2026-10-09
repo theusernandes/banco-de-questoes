@@ -4284,6 +4284,35 @@ var REGRAS_MATRIZ=[
   "A área da habilidade acompanha a matéria: Linguagens (LC) para português, literatura, línguas estrangeiras, arte e educação física; Matemática (MT); Ciências da Natureza (CN) para física, química e biologia; Ciências Humanas (CH) para história, geografia, filosofia e sociologia.",
   "Escolha pela ação que o aluno precisa fazer para acertar (identificar, analisar, comparar, avaliar...), não só pelo tema."
 ];
+/* No ENEM cada bloco de 45 questões é de uma só área (1-45, 46-90, 91-135, 136-180).
+   A área do bloco é a da maioria das questões classificadas nele; a questão que a IA
+   pôs em outra área perde a habilidade e é refeita dentro da área certa.
+   Devolve quantas questões precisam ser refeitas.                                    */
+function corrigirAreasEnem(prova){
+  if(!prova||!/ENEM/i.test((prova.origem||"")+" "+(prova.nome||"")))return 0;
+  var blocos={}, refazer=0;
+  prova.questoes.forEach(function(q){
+    var b=Math.floor((Number(q.numero)-1)/45), x=HAB_ENEM[q.matriz];
+    if(!(b>=0&&b<4))return;
+    blocos[b]=blocos[b]||{};
+    if(x)blocos[b][x.area]=(blocos[b][x.area]||0)+1;
+  });
+  var areaDoBloco={};
+  Object.keys(blocos).forEach(function(b){
+    var c=blocos[b], total=0, melhor="", n=0;
+    Object.keys(c).forEach(function(a){total+=c[a];if(c[a]>n){n=c[a];melhor=a;}});
+    if(total>=5&&n/total>=0.6)areaDoBloco[b]=melhor;
+  });
+  prova.questoes.forEach(function(q){
+    var area=areaDoBloco[Math.floor((Number(q.numero)-1)/45)];
+    if(!area)return;
+    q.areaEnem=area;
+    var naArea=(q.materias||[]).filter(function(m){return AREA_DA_MATERIA[m]===area;});
+    if(naArea.length&&naArea.length<(q.materias||[]).length)q.materias=naArea;
+    if(q.matriz&&HAB_ENEM[q.matriz]&&HAB_ENEM[q.matriz].area!==area){delete q.matriz;refazer++;}
+  });
+  return refazer;
+}
 /* para provas já importadas: só a habilidade, com a matéria já conhecida ajudando a escolher a área */
 function classificarMatriz(lista,aoProgresso){
   var pendentes=lista.filter(function(q){return q.texto;}), feitas=0, total=pendentes.length;
@@ -4292,7 +4321,10 @@ function classificarMatriz(lista,aoProgresso){
     if(!pendentes.length||cancelado||paradaGeral)return Promise.resolve();
     var grupo=pendentes.splice(0,25);
     var areas={};
-    grupo.forEach(function(q){(q.materias||[]).forEach(function(m){if(AREA_DA_MATERIA[m])areas[AREA_DA_MATERIA[m]]=1;});});
+    grupo.forEach(function(q){
+      if(q.areaEnem){areas[q.areaEnem]=1;return;}
+      (q.materias||[]).forEach(function(m){if(AREA_DA_MATERIA[m])areas[AREA_DA_MATERIA[m]]=1;});
+    });
     var usadas=Object.keys(areas);
     var pedido=[
       "Você recebe questões de uma prova oficial já aplicada. NÃO reescreva, não crie e não corrija nada."
@@ -4307,13 +4339,14 @@ function classificarMatriz(lista,aoProgresso){
       "",
       "QUESTÕES:",
       grupo.map(function(q,k){
-        return "["+(k+1)+"]"+((q.materias||[]).length?" ("+q.materias.join(", ")+")":"")+" "+resumoParaClassificar(q);
+        return "["+(k+1)+"]"+(q.areaEnem?" (área obrigatória: "+NOMES_AREA_ENEM[q.areaEnem]+", só códigos "+q.areaEnem+")":
+          ((q.materias||[]).length?" ("+q.materias.join(", ")+")":""))+" "+resumoParaClassificar(q);
       }).join("\n\n")
     ]).join("\n");
     return chamarIAComInsistencia(pedido,function(aviso){aoProgresso(aviso);}).then(function(resp){
       extrairArray(resp).forEach(function(d){
         var alvo=grupo[Number(d.n)-1], cod=codigoHabilidade(d.hab);
-        if(alvo&&cod)alvo.matriz=cod;
+        if(alvo&&cod&&(!alvo.areaEnem||HAB_ENEM[cod].area===alvo.areaEnem))alvo.matriz=cod;
       });
       feitas+=grupo.length;
       aoProgresso("Classificando pela matriz do ENEM: "+Math.min(feitas,total)+" de "+total+" questões…");
@@ -4666,9 +4699,14 @@ $("btn-processar-prova").addEventListener("click",function(){
           })
         : Promise.resolve();
       if(classificar)anunciar("Classificando "+questoes.length+" questões por matéria e assunto…");
+      var prova;
       return etapa.then(function(){
-        var prova={id:id(),nome:nome,origem:$("origem-prova").value,criadaEm:new Date().toISOString(),
-                   questoes:questoes,comuns:saida.comuns||[],arquivo:arq,gabaritoLido:chave,versaoExtracao:VERSAO_EXTRACAO};
+        prova={id:id(),nome:nome,origem:$("origem-prova").value,criadaEm:new Date().toISOString(),
+               questoes:questoes,comuns:saida.comuns||[],arquivo:arq,gabaritoLido:chave,versaoExtracao:VERSAO_EXTRACAO};
+        if(!classificar||questoes.falhaClassificacao||!corrigirAreasEnem(prova))return;
+        anunciar("Conferindo as áreas da matriz do ENEM…");
+        return classificarMatriz(questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];}),anunciar).catch(function(){});
+      }).then(function(){
         return gravarProva(prova).then(function(){
           var recado=relatorioImportacao(questoes);
           var semClasse=questoes.filter(function(q){return !q.assunto;}).length;
@@ -4762,8 +4800,10 @@ $("btn-classificar-prova").addEventListener("click",function(){
 $("btn-matriz-prova").addEventListener("click",function(){
   if(!provaAtual){msg("retorno-prova","Escolha uma prova primeiro.","erro");return;}
   if(!conf.chave){msg("retorno-prova","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
+  var corrigidas=corrigirAreasEnem(provaAtual);
   var pendentes=provaAtual.questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];});
   if(!pendentes.length){msg("retorno-prova","Todas as questões desta prova já têm a habilidade da matriz do ENEM.","ok");return;}
+  if(corrigidas)msg("retorno-prova",corrigidas+(corrigidas===1?" questão estava":" questões estavam")+" fora da área do seu bloco na prova e "+(corrigidas===1?"será refeita":"serão refeitas")+".","");
   var botao=this, rotulo=botao.textContent;
   botao.disabled=true;botao.textContent="Classificando…";
   cancelado=false;
