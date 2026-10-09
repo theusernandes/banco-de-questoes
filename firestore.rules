@@ -17,6 +17,11 @@ service cloud.firestore {
       allow create, update: if membro() && request.resource.data.t == request.time;
       allow delete: if admin();
     }
+    // livros SESI: índice por série e texto dos capítulos (só o administrador envia)
+    match /livros/{item} {
+      allow read: if membro();
+      allow write: if admin();
+    }
     // professores liberados (só o administrador inclui ou remove)
     match /membros/{email} {
       allow read: if membro() || (logado() && request.auth.token.email == email);
