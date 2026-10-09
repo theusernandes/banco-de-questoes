@@ -287,7 +287,7 @@ input[type=file]{font-size:13px}
             <div id="ls-lista"></div>
             <div class="so-admin" style="margin-top:10px">
               <button class="botao secundario" type="button" id="btn-ls-enviar">Enviar livros para a nuvem</button>
-              <input type="file" id="arquivo-livros" accept="application/json,.json" multiple style="display:none">
+              <input type="file" id="arquivo-livros" accept="application/json,.json,.gz" multiple style="display:none">
               <div id="ls-envio"></div>
             </div>
           </div>
@@ -1818,6 +1818,8 @@ function livrosIniciar(){
     arquivos.forEach(function(arq,n){
       cadeia=cadeia.then(function(){
         msg("ls-envio","Lendo "+esc(arq.name)+"…");
+        // os arquivos podem vir compactados (.json.gz)
+        if(/\.gz$/i.test(arq.name))return new Response(arq.stream().pipeThrough(new DecompressionStream("gzip"))).text();
         return arq.text();
       }).then(function(txt){
         var p=JSON.parse(txt);
