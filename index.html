@@ -1457,6 +1457,8 @@ var TIPOS_VALIDOS=["objetiva","dissertativa","passe","adaptada","enem","ssa"];
 var abas=document.querySelectorAll(".aba");
 for(var i=0;i<abas.length;i++){
   abas[i].addEventListener("click",function(){
+    var anterior=document.querySelector(".vista.ativa");
+    if(anterior&&anterior.id!=="vista-"+this.dataset.vista){desmarcarMateriais();livrosDesmarcarTudo();livrosRender();}
     for(var j=0;j<abas.length;j++)abas[j].setAttribute("aria-selected","false");
     this.setAttribute("aria-selected","true");
     var vistas=document.querySelectorAll(".vista");
@@ -1483,6 +1485,8 @@ var LIMITE_MATERIAL=400000;   // caracteres guardados por material
 var JANELA=55000;             // trecho enviado à IA em cada lote
 var materiais=[];
 try{materiais=JSON.parse(ler(CHAVE_MATERIAIS)||"[]");}catch(e){materiais=[];}
+// a marcação vale só para esta visita à aba Gerar: ao abrir a página, nada vem marcado
+materiais.forEach(function(m){m.ativo=false;});
 function salvarMateriais(){
   try{
     gravar(CHAVE_MATERIAIS,JSON.stringify(materiais));
@@ -1532,7 +1536,9 @@ function renderMateriais(){
         '<input type="text" data-turma="'+esc(m.id)+'" value="'+esc(m.turma||"")+'" placeholder="turma ou série">'+
       "</div></div>"+
       '<button data-remover="'+esc(m.id)+'">remover</button></div>';
-  }).join("");
+  }).join("")+
+  (materiais.some(function(m){return m.ativo;})?'<button class="botao perigo" type="button" id="btn-mat-desmarcar" style="margin-top:10px">Desmarcar tudo</button>':"");
+  if($("btn-mat-desmarcar"))$("btn-mat-desmarcar").addEventListener("click",function(){desmarcarMateriais();});
   alvo.querySelectorAll("[data-tipo]").forEach(function(sel){
     sel.addEventListener("change",function(){
       var m=materiais.filter(function(x){return x.id===this.dataset.tipo;}.bind(this))[0];
@@ -1548,7 +1554,7 @@ function renderMateriais(){
   alvo.querySelectorAll("[data-material]").forEach(function(cb){
     cb.addEventListener("change",function(){
       var m=materiais.filter(function(x){return x.id===this.dataset.material;}.bind(this))[0];
-      if(m){m.ativo=this.checked;salvarMateriais();resumoBiblioteca();}
+      if(m){m.ativo=this.checked;salvarMateriais();renderMateriais();}
     });
   });
   resumoBiblioteca();
@@ -1561,6 +1567,11 @@ function renderMateriais(){
       salvarMateriais();renderMateriais();
     });
   });
+}
+function desmarcarMateriais(){
+  if(!materiais.some(function(m){return m.ativo;}))return;
+  materiais.forEach(function(m){m.ativo=false;});
+  salvarMateriais();renderMateriais();
 }
 function ativos(){return materiais.filter(function(m){return m.ativo;}).concat(livrosEmUso());}
 function resumoBiblioteca(){
@@ -1586,9 +1597,10 @@ var CHAVE_LIVROS="bancoQuestoes.livrosSesi.v1", BD_LIVROS="bancoQuestoes.livros"
 var LS={marcados:{},textos:{},indices:{},serie:"",carregando:null};
 try{
   var livrosSalvos=JSON.parse(ler(CHAVE_LIVROS)||"null");
-  if(livrosSalvos){LS.marcados=livrosSalvos.marcados||{};LS.serie=livrosSalvos.serie||"";}
+  if(livrosSalvos)LS.serie=livrosSalvos.serie||"";
 }catch(e){}
-function livrosGuardar(){gravar(CHAVE_LIVROS,JSON.stringify({marcados:LS.marcados,serie:LS.serie}));}
+// os capítulos marcados valem só para esta visita à aba Gerar: recarregar a página ou trocar de aba desmarca tudo
+function livrosGuardar(){gravar(CHAVE_LIVROS,JSON.stringify({serie:LS.serie}));}
 function nomeSerieSesi(chave){
   var s=SERIES_SESI.filter(function(x){return x[0]===chave;})[0];
   return s?s[2]+(s[1]==="Ensino Médio"?" do Ensino Médio":""):chave;
@@ -1675,10 +1687,17 @@ function livrosRenderMarcados(){
       var m=LS.marcados[id];
       return "<li>"+esc(m.nome)+(LS.textos[id]?"":' <em>(carregando…)</em>')+
         ' <button type="button" class="link-tirar" data-tirar="'+esc(id)+'" style="background:none;border:none;color:var(--cinza);text-decoration:underline;cursor:pointer;font-size:12px;padding:0">tirar</button></li>';
-    }).join("")+"</ul></div>";
+    }).join("")+"</ul>"+
+    '<button class="botao perigo" type="button" id="btn-ls-desmarcar" style="margin-top:10px">Desmarcar tudo</button></div>';
+  $("btn-ls-desmarcar").addEventListener("click",function(){livrosDesmarcarTudo();livrosRender();});
   alvo.querySelectorAll("[data-tirar]").forEach(function(b){
     b.addEventListener("click",function(){livrosDesmarcar(this.dataset.tirar);livrosRender();});
   });
+}
+function livrosDesmarcarTudo(){
+  if(!Object.keys(LS.marcados).length)return;
+  LS.marcados={};LS.textos={};
+  livrosGuardar();resumoBiblioteca();livrosRenderMarcados();
 }
 function livrosDesmarcar(id){
   delete LS.marcados[id];delete LS.textos[id];
