@@ -594,6 +594,8 @@ input[type=file]{font-size:13px}
       <button class="botao secundario" id="btn-matriz-prova">Classificar pela matriz do ENEM</button>
       <button class="botao perigo" id="btn-apagar-prova">Apagar esta prova</button>
     </div>
+    <div id="progresso-classificar" class="progresso"></div>
+    <div id="retorno-classificar"></div>
     <p class="contador" id="contador-oficiais"></p>
   </div>
 
@@ -4771,61 +4773,62 @@ $("btn-marcar-oficiais").addEventListener("click",function(){
 $("btn-limpar-oficiais").addEventListener("click",function(){oficiaisSelecionadas={};renderOficiais();});
 $("btn-folha-oficiais").addEventListener("click",montarFolhaOficiais);
 $("btn-classificar-prova").addEventListener("click",function(){
-  if(!provaAtual){msg("retorno-prova","Escolha uma prova primeiro.","erro");return;}
-  if(!conf.chave){msg("retorno-prova","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
+  if(!provaAtual){msg("retorno-classificar","Escolha uma prova primeiro.","erro");return;}
+  if(!conf.chave){msg("retorno-classificar","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
   var pendentes=provaAtual.questoes.filter(function(q){return !q.assunto;});
-  if(!pendentes.length){msg("retorno-prova","Todas as questões desta prova já têm matéria e assunto.","ok");return;}
+  if(!pendentes.length){msg("retorno-classificar","Todas as questões desta prova já têm matéria e assunto.","ok");return;}
   var botao=this;
   botao.disabled=true;botao.textContent="Classificando…";
   cancelado=false;
-  $("progresso-prova").className="progresso ativo";
+  $("progresso-classificar").className="progresso ativo";
   var alvo=provaAtual;
-  classificarQuestoes(pendentes,function(t){$("progresso-prova").textContent=t;})
+  classificarQuestoes(pendentes,function(t){$("progresso-classificar").textContent=t;})
     .then(function(){return gravarProva(alvo);})
     .then(function(){
       var faltam=alvo.questoes.filter(function(q){return !q.assunto;}).length;
-      msg("retorno-prova",(pendentes.length-faltam)+" questões classificadas."+
+      msg("retorno-classificar",(pendentes.length-faltam)+" questões classificadas."+
         (faltam?" Ainda faltam "+faltam+" — rode de novo quando a cota do provedor permitir.":""),"ok");
       return recarregarProvas();
     })
     .catch(function(e){
-      msg("retorno-prova","A classificação parou: "+esc(e.message||"falha")+" As questões continuam salvas; tente mais tarde.","erro");
+      msg("retorno-classificar","A classificação parou: "+esc(e.message||"falha")+" As questões continuam salvas; tente mais tarde.","erro");
       return gravarProva(alvo).then(recarregarProvas);
     })
     .then(function(){
       botao.disabled=false;botao.textContent="Classificar por matéria";
-      $("progresso-prova").className="progresso";
+      $("progresso-classificar").className="progresso";
     });
 });
 $("btn-matriz-prova").addEventListener("click",function(){
-  if(!provaAtual){msg("retorno-prova","Escolha uma prova primeiro.","erro");return;}
-  if(!conf.chave){msg("retorno-prova","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
+  if(!provaAtual){msg("retorno-classificar","Escolha uma prova primeiro.","erro");return;}
+  if(!conf.chave){msg("retorno-classificar","Cadastre a chave de acesso à IA em Ajustes para classificar.","erro");abrirAssistenteChave();return;}
   var corrigidas=corrigirAreasEnem(provaAtual);
   var pendentes=provaAtual.questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];});
-  if(!pendentes.length){msg("retorno-prova","Todas as questões desta prova já têm a habilidade da matriz do ENEM.","ok");return;}
-  if(corrigidas)msg("retorno-prova",corrigidas+(corrigidas===1?" questão estava":" questões estavam")+" fora da área do seu bloco na prova e "+(corrigidas===1?"será refeita":"serão refeitas")+".","");
+  if(!pendentes.length){msg("retorno-classificar","Todas as questões desta prova já têm a habilidade da matriz do ENEM.","ok");return;}
+  if(corrigidas)msg("retorno-classificar",corrigidas+(corrigidas===1?" questão estava":" questões estavam")+" fora da área do seu bloco na prova e "+(corrigidas===1?"será refeita":"serão refeitas")+".","");
   var botao=this, rotulo=botao.textContent;
   botao.disabled=true;botao.textContent="Classificando…";
   cancelado=false;
-  $("progresso-prova").className="progresso ativo";
-  $("progresso-prova").textContent="Classificando pela matriz do ENEM: 0 de "+pendentes.length+" questões…";
+  $("progresso-classificar").className="progresso ativo";
+  $("progresso-classificar").textContent="Classificando pela matriz do ENEM: 0 de "+pendentes.length+" questões…";
   var alvo=provaAtual;
-  classificarMatriz(pendentes,function(t){$("progresso-prova").textContent=t;})
+  classificarMatriz(pendentes,function(t){$("progresso-classificar").textContent=t;})
     .then(function(){return gravarProva(alvo);})
     .then(function(){
       var faltam=alvo.questoes.filter(function(q){return q.texto&&!HAB_ENEM[q.matriz];}).length;
       var feitas=pendentes.length-faltam;
-      msg("retorno-prova",feitas+(feitas===1?" questão classificada":" questões classificadas")+" pela matriz do ENEM."+
+      msg("retorno-classificar",(corrigidas?corrigidas+(corrigidas===1?" questão estava fora da área do seu bloco na prova e foi refeita. ":" questões estavam fora da área do seu bloco na prova e foram refeitas. "):"")+
+        feitas+(feitas===1?" questão classificada":" questões classificadas")+" pela matriz do ENEM."+
         (faltam?" "+(faltam===1?"Ficou 1 sem habilidade":"Ficaram "+faltam+" sem habilidade")+". Rode de novo para completar.":""),"ok");
       return recarregarProvas();
     })
     .catch(function(e){
-      msg("retorno-prova","A classificação parou: "+esc(e.message||"falha")+" O que já foi classificado ficou salvo; tente de novo mais tarde.","erro");
+      msg("retorno-classificar","A classificação parou: "+esc(e.message||"falha")+" O que já foi classificado ficou salvo; tente de novo mais tarde.","erro");
       return gravarProva(alvo).then(recarregarProvas);
     })
     .then(function(){
       botao.disabled=false;botao.textContent=rotulo;
-      $("progresso-prova").className="progresso";
+      $("progresso-classificar").className="progresso";
     });
 });
 $("btn-apagar-prova").addEventListener("click",function(){
