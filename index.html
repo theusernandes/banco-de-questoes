@@ -123,6 +123,15 @@ input[type=file]{font-size:13px}
 .material select{padding:6px 8px;font-size:12px}
 .material button{background:none;border:none;color:var(--cinza);text-decoration:underline;cursor:pointer;font-size:12px;padding:0}
 .material button:hover{color:var(--vermelho)}
+.livros-sesi{margin-top:18px;padding-top:14px;border-top:1px solid var(--regua)}
+.livros-sesi h4{margin:0 0 4px;font-size:14px}
+.livros-sesi .caderno{border-bottom:1px solid var(--regua);padding:6px 0;font-size:13.5px}
+.livros-sesi .caderno summary{cursor:pointer;font-weight:700}
+.livros-sesi .caderno summary .sub{font-weight:400;color:var(--cinza);font-size:12px}
+.livros-sesi label.cap{display:flex;gap:8px;align-items:flex-start;padding:4px 0 4px 6px;cursor:pointer}
+.livros-sesi label.cap input{width:16px;height:16px;margin-top:2px;accent-color:var(--verde);flex:none}
+.livros-sesi label.cap .sub{color:var(--cinza);font-size:12px}
+
 .caixa-hab{max-height:240px;overflow-y:auto;border:1px solid var(--regua);border-radius:8px;background:#FBFCFA;padding:4px 12px}
 .hab{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--regua);font-size:13px}
 .hab:last-child{border-bottom:none}
@@ -266,6 +275,22 @@ input[type=file]{font-size:13px}
             <select id="fm-tipo"><option value="">Todos os tipos</option></select>
           </div>
           <div id="lista-materiais"></div>
+          <div class="livros-sesi" id="livros-sesi">
+            <h4>Livros SESI</h4>
+            <p class="ajuda">Os cadernos do portal SESI Educação, guardados na nuvem do grupo. Escolha a série e marque os capítulos que devem alimentar a próxima geração. O texto de cada capítulo é baixado só quando você o marca.</p>
+            <div class="filtros" style="margin:8px 0 4px">
+              <select id="ls-serie"><option value="">Escolha a série</option></select>
+              <select id="ls-area"><option value="">Todas as áreas</option></select>
+              <select id="ls-tipo"><option value="">Aluno e professor</option><option value="aluno">Caderno do aluno</option><option value="professor">Caderno do professor</option></select>
+            </div>
+            <div id="ls-marcados"></div>
+            <div id="ls-lista"></div>
+            <div class="so-admin" style="margin-top:10px">
+              <button class="botao secundario" type="button" id="btn-ls-enviar">Enviar livros para a nuvem</button>
+              <input type="file" id="arquivo-livros" accept="application/json,.json" multiple style="display:none">
+              <div id="ls-envio"></div>
+            </div>
+          </div>
           <div class="botoes" style="margin-top:12px">
             <p class="ajuda" style="margin:10px 0 4px">Os dois botões abaixo servem apenas para levar esta biblioteca a outro computador ou a um colega: um gera o arquivo, o outro carrega o arquivo recebido.</p>
             <button class="botao secundario" id="btn-exportar-biblioteca">Baixar biblioteca</button>
@@ -1537,15 +1562,283 @@ function renderMateriais(){
     });
   });
 }
-function ativos(){return materiais.filter(function(m){return m.ativo;});}
+function ativos(){return materiais.filter(function(m){return m.ativo;}).concat(livrosEmUso());}
 function resumoBiblioteca(){
   var alvo=$("resumo-biblioteca");
   if(!alvo)return;
-  var n=materiais.length, a=ativos().length;
-  alvo.textContent=n
-    ? ("— "+n+" "+(n===1?"arquivo":"arquivos")+", "+(a?a+" em uso nesta geração":"nenhum marcado"))
+  var n=materiais.length, a=ativos().length, l=livrosEmUso().length;
+  alvo.textContent=n||l
+    ? ("— "+(n?n+" "+(n===1?"arquivo":"arquivos"):"")+(n&&l?" e ":"")+(l?l+" "+(l===1?"capítulo":"capítulos")+" dos livros SESI":"")+
+       ", "+(a?a+" em uso nesta geração":"nenhum marcado"))
     : "— nenhum arquivo anexado";
 }
+
+/* ---------------- livros SESI ----------------
+   Os cadernos do portal SESI Educação ficam na coleção "livros" da nuvem:
+   livros/indice-<série> lista cadernos e capítulos (sem texto) e
+   livros/c-<capítulo> guarda o texto, fatiado em c-<capítulo>~2, ~3...
+   quando passa do limite de um documento. Só o administrador envia.
+   Os capítulos marcados ficam neste aparelho, e o texto de cada um fica
+   no IndexedDB para não ser baixado de novo.                              */
+var SERIES_SESI=[["af6","Anos Finais","6º ano"],["af7","Anos Finais","7º ano"],["af8","Anos Finais","8º ano"],
+  ["af9","Anos Finais","9º ano"],["em1","Ensino Médio","1ª série"],["em2","Ensino Médio","2ª série"],["em3","Ensino Médio","3ª série"]];
+var CHAVE_LIVROS="bancoQuestoes.livrosSesi.v1", BD_LIVROS="bancoQuestoes.livros";
+var LS={marcados:{},textos:{},indices:{},serie:"",carregando:null};
+try{
+  var livrosSalvos=JSON.parse(ler(CHAVE_LIVROS)||"null");
+  if(livrosSalvos){LS.marcados=livrosSalvos.marcados||{};LS.serie=livrosSalvos.serie||"";}
+}catch(e){}
+function livrosGuardar(){gravar(CHAVE_LIVROS,JSON.stringify({marcados:LS.marcados,serie:LS.serie}));}
+function nomeSerieSesi(chave){
+  var s=SERIES_SESI.filter(function(x){return x[0]===chave;})[0];
+  return s?s[2]+(s[1]==="Ensino Médio"?" do Ensino Médio":""):chave;
+}
+function nomeCaderno(L){
+  var n=/(\d+)\s*$/.exec(L.titulo);
+  return L.area+(n?" – Caderno "+n[1]:"")+(L.tipo==="professor"?" (professor)":"");
+}
+function livrosEmUso(){
+  return Object.keys(LS.marcados).filter(function(id){return LS.textos[id];}).map(function(id){
+    var m=LS.marcados[id];
+    return {id:"livro-"+id,nome:m.nome,texto:LS.textos[id],palavras:m.palavras||0,ativo:true,tipo:"Livro didático",turma:nomeSerieSesi(m.serie)};
+  });
+}
+
+/* ---- texto dos capítulos: IndexedDB primeiro, nuvem se faltar ---- */
+function abrirBDLivros(){
+  return new Promise(function(ok,erro){
+    var req;
+    try{req=indexedDB.open(BD_LIVROS,1);}catch(e){erro(e);return;}
+    req.onupgradeneeded=function(){
+      var db=req.result;
+      if(!db.objectStoreNames.contains("textos"))db.createObjectStore("textos",{keyPath:"id"});
+    };
+    req.onsuccess=function(){ok(req.result);};
+    req.onerror=function(){erro(req.error||new Error("armazenamento indisponível"));};
+  });
+}
+function lerTextoLocal(id){
+  return abrirBDLivros().then(function(db){
+    return new Promise(function(ok){
+      var r=db.transaction("textos","readonly").objectStore("textos").get(id);
+      r.onsuccess=function(){ok(r.result?r.result.texto:null);};
+      r.onerror=function(){ok(null);};
+    });
+  }).catch(function(){return null;});
+}
+function guardarTextoLocal(id,texto){
+  return abrirBDLivros().then(function(db){
+    return new Promise(function(ok){
+      var t=db.transaction("textos","readwrite");
+      t.objectStore("textos").put({id:id,texto:texto});
+      t.oncomplete=function(){ok();};t.onerror=function(){ok();};
+    });
+  }).catch(function(){});
+}
+function livrosNaNuvem(){return typeof NV!=="undefined"&&!!(NV&&NV.sdk&&NV.db&&NV.membro);}
+function baixarTextoCapitulo(id){
+  var S=NV.sdk;
+  return S.getDoc(S.doc(NV.db,"livros","c-"+id)).then(function(d){
+    if(!d.exists())throw new Error("capítulo não encontrado na nuvem");
+    var x=d.data(), pedidos=[];
+    for(var i=2;i<=(x.partes||1);i++)pedidos.push(S.getDoc(S.doc(NV.db,"livros","c-"+id+"~"+i)));
+    return Promise.all(pedidos).then(function(resto){
+      return [x.texto||""].concat(resto.map(function(r){return r.exists()?r.data().texto||"":"";})).join("");
+    });
+  });
+}
+function textoCapitulo(id){
+  if(LS.textos[id])return Promise.resolve(LS.textos[id]);
+  return lerTextoLocal(id).then(function(t){
+    if(t)return t;
+    if(!livrosNaNuvem())throw new Error("entre na nuvem para baixar este capítulo");
+    return baixarTextoCapitulo(id).then(function(t2){guardarTextoLocal(id,t2);return t2;});
+  }).then(function(t){LS.textos[id]=t;return t;});
+}
+// traz o texto dos capítulos marcados que ainda não estão na memória
+function livrosCompletarTextos(){
+  var faltam=Object.keys(LS.marcados).filter(function(id){return !LS.textos[id];});
+  if(!faltam.length)return Promise.resolve();
+  return Promise.all(faltam.map(function(id){return textoCapitulo(id).catch(function(){});})).then(function(){
+    resumoBiblioteca();livrosRenderMarcados();
+  });
+}
+
+/* ---- tela ---- */
+function livrosRenderMarcados(){
+  var alvo=$("ls-marcados");
+  if(!alvo)return;
+  var ids=Object.keys(LS.marcados);
+  if(!ids.length){alvo.innerHTML="";return;}
+  alvo.innerHTML='<div class="aviso">'+'<strong>'+ids.length+" "+(ids.length===1?"capítulo marcado":"capítulos marcados")+"</strong> para a próxima geração:"+
+    '<ul style="margin:6px 0 0;padding-left:18px">'+ids.map(function(id){
+      var m=LS.marcados[id];
+      return "<li>"+esc(m.nome)+(LS.textos[id]?"":' <em>(carregando…)</em>')+
+        ' <button type="button" class="link-tirar" data-tirar="'+esc(id)+'" style="background:none;border:none;color:var(--cinza);text-decoration:underline;cursor:pointer;font-size:12px;padding:0">tirar</button></li>';
+    }).join("")+"</ul></div>";
+  alvo.querySelectorAll("[data-tirar]").forEach(function(b){
+    b.addEventListener("click",function(){livrosDesmarcar(this.dataset.tirar);livrosRender();});
+  });
+}
+function livrosDesmarcar(id){
+  delete LS.marcados[id];delete LS.textos[id];
+  livrosGuardar();resumoBiblioteca();livrosRenderMarcados();
+}
+function livrosRender(){
+  var sel=$("ls-serie");
+  if(!sel)return;
+  if(sel.options.length<=1){
+    SERIES_SESI.forEach(function(s){
+      var o=document.createElement("option");o.value=s[0];o.textContent=s[1]+" · "+s[2];sel.appendChild(o);
+    });
+  }
+  sel.value=LS.serie;
+  livrosRenderMarcados();
+  var lista=$("ls-lista"), area=$("ls-area");
+  if(!LS.serie){lista.innerHTML="";area.innerHTML='<option value="">Todas as áreas</option>';return;}
+  var ind=LS.indices[LS.serie];
+  if(!ind){
+    if(!livrosNaNuvem()){
+      lista.innerHTML='<div class="aviso">Os livros ficam na nuvem do grupo. Entre na nuvem para ver os capítulos.</div>';
+      return;
+    }
+    if(LS.carregando===LS.serie)return;
+    var chave=LS.carregando=LS.serie;
+    lista.innerHTML='<div class="aviso">Carregando a lista de livros…</div>';
+    NV.sdk.getDoc(NV.sdk.doc(NV.db,"livros","indice-"+chave)).then(function(d){
+      LS.indices[chave]=d.exists()?d.data():{vazio:true};
+    }).catch(function(e){
+      lista.innerHTML='<div class="aviso erro">Não foi possível abrir a lista de livros'+
+        (e&&e.code==="permission-denied"?": a regra da coleção de livros ainda não foi publicada no Firebase.":".")+"</div>";
+    }).then(function(){
+      LS.carregando=null;
+      if(LS.indices[chave]&&LS.serie===chave)livrosRender();
+    });
+    return;
+  }
+  if(ind.vazio||!ind.livros||!ind.livros.length){
+    area.innerHTML='<option value="">Todas as áreas</option>';
+    lista.innerHTML='<div class="aviso">Os livros desta série ainda não foram enviados para a nuvem.</div>';
+    return;
+  }
+  var atualA=area.value, vistos={}, areas=[];
+  ind.livros.forEach(function(L){if(!vistos[L.area]){vistos[L.area]=1;areas.push(L.area);}});
+  if(atualA&&!vistos[atualA])atualA="";
+  area.innerHTML='<option value="">Todas as áreas</option>'+areas.sort().map(function(a){
+    return '<option value="'+esc(a)+'"'+(a===atualA?" selected":"")+">"+esc(a)+"</option>";}).join("");
+  var ft=$("ls-tipo").value;
+  var html=ind.livros.map(function(L,i){
+    if((atualA&&L.area!==atualA)||(ft&&L.tipo!==ft))return "";
+    var marc=L.caps.filter(function(c){return LS.marcados[c.id];}).length;
+    return '<details class="caderno"'+(marc?" open":"")+"><summary>"+esc(nomeCaderno(L))+
+      ' <span class="sub">'+L.caps.length+" "+(L.caps.length===1?"capítulo":"capítulos")+(marc?", "+marc+" "+(marc===1?"marcado":"marcados"):"")+"</span></summary>"+
+      L.caps.map(function(c){
+        return '<label class="cap"><input type="checkbox" data-cap="'+esc(c.id)+'" data-livro="'+i+'"'+(LS.marcados[c.id]?" checked":"")+">"+
+          "<span>"+esc(c.nome)+' <span class="sub">'+(c.palavras||0).toLocaleString("pt-BR")+" palavras"+
+          (c.f?' · <a href="https://www.sesieducacao.com.br/pdfreader.php?f='+encodeURIComponent(c.f)+'" target="_blank" rel="noopener">abrir no portal</a>':"")+
+          "</span></span></label>";
+      }).join("")+"</details>";
+  }).join("");
+  lista.innerHTML=html||'<div class="aviso">Nenhum caderno corresponde aos filtros.</div>';
+  lista.querySelectorAll("[data-cap]").forEach(function(cb){
+    cb.addEventListener("change",function(){
+      var id=this.dataset.cap, L=ind.livros[+this.dataset.livro], caixa=this;
+      var c=L.caps.filter(function(x){return x.id===id;})[0];
+      if(!this.checked){livrosDesmarcar(id);return;}
+      LS.marcados[id]={nome:"Livro SESI · "+nomeSerieSesi(ind.chave)+" · "+nomeCaderno(L)+" · "+c.nome,serie:ind.chave,palavras:c.palavras};
+      livrosGuardar();livrosRenderMarcados();
+      textoCapitulo(id).then(function(){
+        resumoBiblioteca();livrosRenderMarcados();
+      }).catch(function(e){
+        caixa.checked=false;livrosDesmarcar(id);
+        msg("ls-marcados","Não foi possível baixar o capítulo: "+esc(e&&e.message||e)+".","erro");
+      });
+    });
+  });
+}
+// chamado quando a nuvem muda de estado: abre a lista pendente e traz os textos que faltam
+function livrosNuvemMudou(){
+  if(!livrosNaNuvem())return;
+  if(LS.serie&&!LS.indices[LS.serie]&&LS.carregando!==LS.serie)livrosRender();
+  livrosCompletarTextos();
+}
+
+/* ---- envio pelo administrador: um arquivo JSON por série ---- */
+function enviarLivrosSerie(pacote,avisar){
+  var S=NV.sdk, docs=[];
+  pacote.livros.forEach(function(L){
+    L.caps.forEach(function(c){
+      var t=pacote.textos[c.id]||"", partes=Math.max(1,Math.ceil(t.length/FATIA));
+      for(var k=1;k<=partes;k++){
+        var dado={texto:t.slice((k-1)*FATIA,k*FATIA),t:S.serverTimestamp()};
+        if(k===1){dado.partes=partes;dado.serie=pacote.chave;}
+        docs.push({id:"c-"+c.id+(k>1?"~"+k:""),dado:dado,peso:dado.texto.length});
+      }
+    });
+  });
+  var indice={etapa:pacote.etapa,serie:pacote.serie,chave:pacote.chave,t:S.serverTimestamp(),
+    livros:pacote.livros.map(function(L){
+      return {titulo:L.titulo,area:L.area,tipo:L.tipo,caps:L.caps.map(function(c){return {id:c.id,nome:c.nome,palavras:c.palavras,f:c.f||""};})};
+    })};
+  // lotes de até 3 milhões de caracteres: um lote do Firestore aceita no máximo 10 MB
+  var lotes=[], atual=[], peso=0;
+  docs.forEach(function(d){
+    if(atual.length&&(peso+d.peso>3000000||atual.length>=LOTE_DOCS)){lotes.push(atual);atual=[];peso=0;}
+    atual.push(d);peso+=d.peso;
+  });
+  if(atual.length)lotes.push(atual);
+  var feitos=0, cadeia=Promise.resolve();
+  lotes.forEach(function(lote){
+    cadeia=cadeia.then(function(){
+      var b=S.writeBatch(NV.db);
+      lote.forEach(function(d){b.set(S.doc(NV.db,"livros",d.id),d.dado);});
+      return b.commit().then(function(){feitos+=lote.length;avisar(feitos,docs.length);});
+    });
+  });
+  // o índice vai por último: a série só aparece para os colegas com todos os textos no lugar
+  return cadeia.then(function(){return S.setDoc(S.doc(NV.db,"livros","indice-"+pacote.chave),indice);})
+    .then(function(){return docs.length;});
+}
+function livrosIniciar(){
+  livrosRender();
+  livrosCompletarTextos();
+  $("ls-serie").addEventListener("change",function(){
+    LS.serie=this.value;livrosGuardar();$("ls-area").value="";livrosRender();
+  });
+  $("ls-area").addEventListener("change",livrosRender);
+  $("ls-tipo").addEventListener("change",livrosRender);
+  $("btn-ls-enviar").addEventListener("click",function(){
+    if(!(NV.admin&&NV.membro)){msg("ls-envio","Entre na nuvem com a conta do administrador para enviar os livros.","erro");return;}
+    $("arquivo-livros").click();
+  });
+  $("arquivo-livros").addEventListener("change",function(){
+    var arquivos=[].slice.call(this.files||[]);this.value="";
+    if(!arquivos.length)return;
+    var relato=[], cadeia=Promise.resolve();
+    arquivos.forEach(function(arq,n){
+      cadeia=cadeia.then(function(){
+        msg("ls-envio","Lendo "+esc(arq.name)+"…");
+        return arq.text();
+      }).then(function(txt){
+        var p=JSON.parse(txt);
+        if(!p||p.formato!=="livros-sesi"||!p.chave||!Array.isArray(p.livros)||!p.textos)throw new Error("não é um arquivo de livros SESI");
+        return enviarLivrosSerie(p,function(f,total){
+          msg("ls-envio","Enviando "+esc(nomeSerieSesi(p.chave))+" (arquivo "+(n+1)+" de "+arquivos.length+"): "+f+" de "+total+" partes…");
+        }).then(function(qt){
+          delete LS.indices[p.chave];
+          relato.push(nomeSerieSesi(p.chave)+": "+p.livros.length+" cadernos, "+qt+" partes de texto");
+        });
+      }).catch(function(e){
+        relato.push(arq.name+": "+(e&&e.code==="permission-denied"?"a nuvem recusou (a regra da coleção de livros foi publicada?)":(e&&e.message||e)));
+      });
+    });
+    cadeia.then(function(){
+      msg("ls-envio","Envio concluído.<br>"+relato.map(esc).join("<br>"),relato.some(function(r){return /recusou|não é|erro/i.test(r);})?"erro":"ok");
+      livrosRender();
+    });
+  });
+}
+livrosIniciar();
 
 function textoDosAtivos(passo){
   var lista=ativos();
@@ -5632,6 +5925,7 @@ function nuvemEstado(qual,detalhe){
   if($("nuvem-membros"))$("nuvem-membros").style.display=NV.admin&&NV.membro?"":"none";
   // aberto como arquivo, sem nuvem, a pessoa é dona de tudo; no link, só o administrador
   document.body.classList.toggle("pode-admin",qual==="arquivo"||(NV.admin&&NV.membro));
+  if(qual==="ok")livrosNuvemMudou();
   // no link, ninguém usa o site sem entrar: a tela de entrada cobre tudo até o login e a liberação
   var semLogin=NV.authPronto&&!NV.usuario, barrado=!!NV.usuario&&qual==="semacesso";
   if($("portao")){
@@ -5665,7 +5959,8 @@ function nuvemIniciar(){
           return S.signInWithCredential(NV.auth,S.GoogleAuthProvider.credential(
             JSON.stringify({sub:email,email:email,email_verified:true})));
         },
-        nv:NV
+        nv:NV,
+        livros:{ls:LS,emUso:livrosEmUso,ativos:ativos,textoIA:textoDosAtivos}
       };
     }
     S.onAuthStateChanged(NV.auth,function(u){
