@@ -3399,13 +3399,19 @@ $("arquivo-pacote").addEventListener("change",function(ev){
     var provas=Array.isArray(pacote.provas)?pacote.provas:[];
     var seguir=provas.length
       ? listarProvas().catch(function(){return [];}).then(function(atuais){
-          var nomes={};atuais.forEach(function(pr){nomes[pr.nome]=1;});
-          var novasP=provas.filter(function(pr){return pr&&pr.nome&&!nomes[pr.nome];});
-          return Promise.all(novasP.map(function(pr){
-            pr.id=id();
-            return gravarProva(pr);
-          })).then(function(){
-            relato.push(novasP.length+" de "+provas.length+" "+(provas.length===1?"prova oficial":"provas oficiais"));
+          var porNome={};atuais.forEach(function(pr){porNome[pr.nome]=pr;});
+          function classificadas(pr){return (pr.questoes||[]).filter(function(q){return q.assunto&&q.matriz;}).length;}
+          var novasP=[], trocadas=0;
+          provas.forEach(function(pr){
+            if(!pr||!pr.nome)return;
+            var aqui=porNome[pr.nome];
+            if(!aqui){pr.id=id();novasP.push(pr);return;}
+            // a mesma prova, mais bem classificada que a daqui, toma o lugar dela
+            if(classificadas(pr)>classificadas(aqui)){pr.id=aqui.id;novasP.push(pr);trocadas++;}
+          });
+          return Promise.all(novasP.map(gravarProva)).then(function(){
+            relato.push((novasP.length-trocadas)+" de "+provas.length+" "+(provas.length===1?"prova oficial":"provas oficiais")+
+              (trocadas?" (e "+trocadas+" que já existia"+(trocadas>1?"m":"")+" aqui, substituída"+(trocadas>1?"s":"")+" pela versão já classificada)":""));
             return recarregarProvas().catch(function(){});
           });
         })
