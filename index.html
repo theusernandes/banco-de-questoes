@@ -3399,13 +3399,19 @@ $("arquivo-pacote").addEventListener("change",function(ev){
     var provas=Array.isArray(pacote.provas)?pacote.provas:[];
     var seguir=provas.length
       ? listarProvas().catch(function(){return [];}).then(function(atuais){
-          var nomes={};atuais.forEach(function(pr){nomes[pr.nome]=1;});
-          var novasP=provas.filter(function(pr){return pr&&pr.nome&&!nomes[pr.nome];});
-          return Promise.all(novasP.map(function(pr){
-            pr.id=id();
-            return gravarProva(pr);
-          })).then(function(){
-            relato.push(novasP.length+" de "+provas.length+" "+(provas.length===1?"prova oficial":"provas oficiais"));
+          var porNome={};atuais.forEach(function(pr){porNome[pr.nome]=pr;});
+          function classificadas(pr){return (pr.questoes||[]).filter(function(q){return q.assunto&&q.matriz;}).length;}
+          var novasP=[], trocadas=0;
+          provas.forEach(function(pr){
+            if(!pr||!pr.nome)return;
+            var aqui=porNome[pr.nome];
+            if(!aqui){pr.id=id();novasP.push(pr);return;}
+            // a mesma prova, mais bem classificada que a daqui, toma o lugar dela
+            if(classificadas(pr)>classificadas(aqui)){pr.id=aqui.id;novasP.push(pr);trocadas++;}
+          });
+          return Promise.all(novasP.map(gravarProva)).then(function(){
+            relato.push((novasP.length-trocadas)+" de "+provas.length+" "+(provas.length===1?"prova oficial":"provas oficiais")+
+              (trocadas?" (e "+trocadas+" que já existia"+(trocadas>1?"m":"")+" aqui, substituída"+(trocadas>1?"s":"")+" pela versão já classificada)":""));
             return recarregarProvas().catch(function(){});
           });
         })
@@ -4016,21 +4022,32 @@ var RUIDO=[
   /\.indb\b/i,
   /\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/,
   /CADERNO\s+\d+\s*\|\s*[A-ZÇÃ]+/i,
-  /\|\s*\d?º?\s*DIA\s*\|/i
+  /\|\s*\d?º?\s*DIA\s*\|/i,
+  /CADERNO\s+\d+\s*•\s*[A-ZÇÃ]+/i,
+  /•\s*\d?º?\s*DIA\s*•/i,
+  /\b(CH|CN|LC|MT)\s*[-–]\s*\d\s*[º°]\s*dia\b/i,
+  /CADERNO\s+\d+\s*[-–]\s*[A-ZÇÃ]+\s*[-–]\s*(P[ÁA]GINA|\d)/i
 ];
 function limparRuido(itens,altura){
-  var rodape=altura;
+  // a marca-d'água pode correr na mesma altura da última alternativa; só marca
+  // o rodapé quando o caderno não traz outra pista dele
+  var rodape=altura, marca=altura;
   itens.forEach(function(it){
     var t=(it.texto||"").trim();
-    for(var i=0;i<RUIDO.length;i++){
-      if(RUIDO[i].test(t)&&it.y>altura*0.75&&it.y<rodape)rodape=it.y;
+    if(!(it.y>altura*0.75))return;
+    if(RUIDO[0].test(t)){if(it.y<marca)marca=it.y;return;}
+    for(var i=1;i<RUIDO.length;i++){
+      if(RUIDO[i].test(t)&&it.y<rodape)rodape=it.y;
     }
   });
+  if(rodape===altura)rodape=marca;
+  // número de página sai, mas não o número de uma "Questão" no alto da página
+  var titulos=itens.filter(function(it){return /^QUEST[ÃAÂÁ]O/i.test((it.texto||"").trim());}).map(function(it){return it.y;});
   var limpos=itens.filter(function(it){
     var t=(it.texto||"").trim();
     if(!t)return false;
     for(var i=0;i<RUIDO.length;i++) if(RUIDO[i].test(t))return false;
-    if(/^\d{1,3}$/.test(t)&&(it.y<altura*0.07||it.y>altura-altura*0.07))return false;
+    if(/^\d{1,3}$/.test(t)&&(it.y<altura*0.07||it.y>altura-altura*0.07)&&!titulos.some(function(y){return Math.abs(y-it.y)<=6;}))return false;
     return true;
   });
   return {itens:limpos,rodape:rodape-10};
@@ -4389,6 +4406,8 @@ function refluir(ls){
 function estruturarQuestao(seq){
   var figAlt=seq.filter(function(i){return i.tipo==="alternativasFigura";})[0];
   var itens=seq.filter(function(i){return i.tipo!=="alternativasFigura"&&(i.tipo!=="linha"||i.texto);});
+  // em alguns cadernos a letra da alternativa vem duplicada no PDF ("AA texto")
+  itens.forEach(function(it){if(it.tipo==="linha")it.texto=it.texto.replace(/^([A-E])\1(?=\s|$)/,"$1");});
   var inicioA=-1;
   for(var i=itens.length-1;i>=0;i--){
     if(itens[i].tipo==="linha"&&/^A(\s|\)|$)/.test(itens[i].texto)){
