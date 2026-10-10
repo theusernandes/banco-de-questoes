@@ -3416,6 +3416,31 @@ $("arquivo-pacote").addEventListener("change",function(ev){
           });
         })
       : Promise.resolve();
+    // correções de questões das provas oficiais: troca só o conteúdo e mantém a classificação feita aqui
+    var correcoes=Array.isArray(pacote.correcoes)?pacote.correcoes:[];
+    if(correcoes.length)seguir=seguir.then(function(){
+      return listarProvas().then(function(atuais){
+        var porNome={};atuais.forEach(function(pr){porNome[pr.nome]=pr;});
+        var mudadas={}, feitas=0;
+        var CAMPOS=["partes","fonte","comando","alternativas","alternativasFigura","temFigura","texto","gabarito"];
+        correcoes.forEach(function(c){
+          var pr=c&&porNome[c.prova];if(!pr||!c.chave)return;
+          var q=(pr.questoes||[]).filter(function(x){return x.chave===c.chave;})[0];
+          if(!q){
+            // questão que faltava na prova: entra inteira, na ordem do caderno
+            if(!c.questao)return;
+            var pos=0;pr.questoes.forEach(function(x,i){if(x.numero<c.questao.numero)pos=i+1;});
+            pr.questoes.splice(pos,0,c.questao);
+          }else CAMPOS.forEach(function(k){if(k in c)q[k]=c[k];});
+          mudadas[pr.id]=pr;feitas++;
+        });
+        var lista=Object.keys(mudadas).map(function(k){return mudadas[k];});
+        return Promise.all(lista.map(gravarProva)).then(function(){
+          relato.push(feitas+" "+(feitas===1?"questão corrigida":"questões corrigidas")+" nas provas oficiais");
+          return recarregarProvas().catch(function(){});
+        });
+      });
+    });
     seguir.catch(function(){
       relato.push("as provas oficiais não puderam ser gravadas neste navegador");
     }).then(function(){
