@@ -123,7 +123,9 @@ input[type=file]{font-size:13px}
 .material select{padding:6px 8px;font-size:12px}
 .material button{background:none;border:none;color:var(--cinza);text-decoration:underline;cursor:pointer;font-size:12px;padding:0}
 .material button:hover{color:var(--vermelho)}
-.livros-sesi{margin-top:18px;padding-top:14px;border-top:1px solid var(--regua)}
+.livros-sesi{margin-top:6px}
+.outros-arquivos{margin-top:18px;padding-top:12px;border-top:1px solid var(--regua)}
+.outros-arquivos summary{cursor:pointer;font-size:14px}
 .livros-sesi h4{margin:0 0 4px;font-size:14px}
 .livros-sesi .caderno{border-bottom:1px solid var(--regua);padding:6px 0;font-size:13.5px}
 .livros-sesi .caderno summary{cursor:pointer;font-weight:700}
@@ -267,14 +269,6 @@ input[type=file]{font-size:13px}
   <div class="bloco">
     <details id="det-biblioteca">
           <summary><strong>Biblioteca de materiais</strong> <span id="resumo-biblioteca" class="sumario"></span></summary>
-          <p class="ajuda">Anexe cada arquivo uma única vez. Ele fica guardado e pode ser reutilizado em quantas gerações quiser. Marque quais devem alimentar a próxima geração.</p>
-          <input type="file" id="arquivos" accept="application/pdf" multiple>
-          <div id="status-pdf" class="progresso"></div>
-          <div class="filtros" style="margin:14px 0 4px">
-            <select id="fm-turma"><option value="">Todas as turmas</option></select>
-            <select id="fm-tipo"><option value="">Todos os tipos</option></select>
-          </div>
-          <div id="lista-materiais"></div>
           <div class="livros-sesi" id="livros-sesi">
             <h4>Livros SESI</h4>
             <p class="ajuda">Os cadernos do portal SESI Educação, guardados na nuvem do grupo. Escolha a série e marque os capítulos que devem alimentar a próxima geração. O texto de cada capítulo é baixado só quando você o marca.</p>
@@ -291,13 +285,23 @@ input[type=file]{font-size:13px}
               <div id="ls-envio"></div>
             </div>
           </div>
-          <div class="botoes" style="margin-top:12px">
-            <p class="ajuda" style="margin:10px 0 4px">Os dois botões abaixo servem apenas para levar esta biblioteca a outro computador ou a um colega: um gera o arquivo, o outro carrega o arquivo recebido.</p>
-            <button class="botao secundario" id="btn-exportar-biblioteca">Baixar biblioteca</button>
-            <button class="botao secundario" id="btn-importar-biblioteca">Importar biblioteca</button>
-            <input type="file" id="arquivo-biblioteca" accept="application/json" style="display:none">
-          </div>
-          <div id="retorno-biblioteca"></div>
+          <details class="outros-arquivos" id="det-outros">
+            <summary><strong>Outros arquivos</strong> <span id="resumo-outros" class="sumario"></span></summary>
+            <p class="ajuda">Provas, apostilas e outros PDFs que não estão nos livros SESI. Anexe cada arquivo uma única vez, dê um título e marque quando ele deve alimentar a próxima geração.</p>
+            <input type="file" id="arquivos" accept="application/pdf" multiple>
+            <div id="status-pdf" class="progresso"></div>
+            <div class="filtros" style="margin:14px 0 4px">
+              <select id="fm-tipo"><option value="">Todos os tipos</option></select>
+            </div>
+            <div id="lista-materiais"></div>
+            <div class="botoes" style="margin-top:12px">
+              <p class="ajuda" style="margin:10px 0 4px">Os dois botões abaixo servem apenas para levar esta biblioteca a outro computador ou a um colega: um gera o arquivo, o outro carrega o arquivo recebido.</p>
+              <button class="botao secundario" id="btn-exportar-biblioteca">Baixar biblioteca</button>
+              <button class="botao secundario" id="btn-importar-biblioteca">Importar biblioteca</button>
+              <input type="file" id="arquivo-biblioteca" accept="application/json" style="display:none">
+            </div>
+            <div id="retorno-biblioteca"></div>
+          </details>
         </details>
   </div>
 
@@ -1496,10 +1500,6 @@ function salvarMateriais(){
 }
 var TIPOS_MATERIAL=["Livro didático","Prova ENEM","Prova SSA","Outro vestibular","Prova interna","Apostila","Outro"];
 function preencherFiltrosMaterial(){
-  var t=$("fm-turma"), atualT=t.value, vistos={}, turmas=[];
-  materiais.forEach(function(m){if(m.turma&&!vistos[m.turma]){vistos[m.turma]=1;turmas.push(m.turma);}});
-  t.innerHTML='<option value="">Todas as turmas</option>'+turmas.sort().map(function(x){
-    return '<option value="'+esc(x)+'"'+(x===atualT?" selected":"")+">"+esc(x)+"</option>";}).join("");
   var f=$("fm-tipo"), atualF=f.value;
   f.innerHTML='<option value="">Todos os tipos</option>'+TIPOS_MATERIAL.map(function(x){
     return '<option value="'+x+'"'+(x===atualF?" selected":"")+">"+x+"</option>";}).join("");
@@ -1508,15 +1508,15 @@ function renderMateriais(){
   var alvo=$("lista-materiais");
   if(!materiais.length){
     resumoBiblioteca();
-    alvo.innerHTML='<div class="aviso">Nenhum material guardado. Anexe um PDF acima — livro didático, apostila ou prova de vestibular — e ele ficará disponível para todas as gerações seguintes.</div>';
+    alvo.innerHTML='<div class="aviso">Nenhum arquivo guardado. Anexe acima um PDF, como uma prova ou apostila, e ele ficará disponível para as próximas gerações.</div>';
     return;
   }
   preencherFiltrosMaterial();
-  var ft=$("fm-turma").value, ff=$("fm-tipo").value;
+  var ff=$("fm-tipo").value;
   var visiveis=materiais.filter(function(m){
-    return (!ft||m.turma===ft)&&(!ff||m.tipo===ff);
+    return !ff||m.tipo===ff;
   }).sort(function(a,b){
-    return (a.tipo||"").localeCompare(b.tipo||"")||(a.turma||"").localeCompare(b.turma||"")||a.nome.localeCompare(b.nome);
+    return (a.tipo||"").localeCompare(b.tipo||"")||(a.titulo||a.nome).localeCompare(b.titulo||b.nome);
   });
   if(!visiveis.length){
     alvo.innerHTML='<div class="aviso">Nenhum material corresponde aos filtros.</div>';
@@ -1528,12 +1528,12 @@ function renderMateriais(){
       return '<option value="'+t+'"'+(t===m.tipo?" selected":"")+">"+t+"</option>";}).join("");
     return '<div class="material">'+
       '<input type="checkbox" data-material="'+esc(m.id)+'" '+(m.ativo?"checked":"")+'>'+
-      '<div class="dados"><div class="nome">'+esc(m.nome)+"</div>"+
-      '<div class="sub">'+m.palavras.toLocaleString("pt-BR")+" palavras · "+
+      '<div class="dados"><div class="nome">'+esc(m.titulo||m.nome)+"</div>"+
+      '<div class="sub">'+(m.titulo?esc(m.nome)+" · ":"")+m.palavras.toLocaleString("pt-BR")+" palavras · "+
       (usadas?usadas+" "+(usadas===1?"questão gerada":"questões geradas"):"nenhuma questão gerada")+"</div>"+
       '<div class="meta-material">'+
         '<select data-tipo="'+esc(m.id)+'">'+tipos+"</select>"+
-        '<input type="text" data-turma="'+esc(m.id)+'" value="'+esc(m.turma||"")+'" placeholder="turma ou série">'+
+        '<input type="text" data-titulo="'+esc(m.id)+'" value="'+esc(m.titulo||"")+'" placeholder="título (ex.: ENEM 2024, 1º dia)">'+
       "</div></div>"+
       '<button data-remover="'+esc(m.id)+'">remover</button></div>';
   }).join("")+
@@ -1545,10 +1545,10 @@ function renderMateriais(){
       if(m){m.tipo=this.value;salvarMateriais();renderMateriais();}
     });
   });
-  alvo.querySelectorAll("[data-turma]").forEach(function(inp){
+  alvo.querySelectorAll("[data-titulo]").forEach(function(inp){
     inp.addEventListener("change",function(){
-      var m=materiais.filter(function(x){return x.id===this.dataset.turma;}.bind(this))[0];
-      if(m){m.turma=this.value.trim();salvarMateriais();renderMateriais();}
+      var m=materiais.filter(function(x){return x.id===this.dataset.titulo;}.bind(this))[0];
+      if(m){m.titulo=this.value.trim();salvarMateriais();renderMateriais();}
     });
   });
   alvo.querySelectorAll("[data-material]").forEach(function(cb){
@@ -1577,11 +1577,14 @@ function ativos(){return materiais.filter(function(m){return m.ativo;}).concat(l
 function resumoBiblioteca(){
   var alvo=$("resumo-biblioteca");
   if(!alvo)return;
-  var n=materiais.length, a=ativos().length, l=livrosEmUso().length;
-  alvo.textContent=n||l
-    ? ("— "+(n?n+" "+(n===1?"arquivo":"arquivos"):"")+(n&&l?" e ":"")+(l?l+" "+(l===1?"capítulo":"capítulos")+" dos livros SESI":"")+
-       ", "+(a?a+" em uso nesta geração":"nenhum marcado"))
-    : "— nenhum arquivo anexado";
+  var n=materiais.length, l=livrosEmUso().length, am=materiais.filter(function(m){return m.ativo;}).length;
+  var partes=[];
+  if(l)partes.push(l+" "+(l===1?"capítulo":"capítulos")+" dos livros SESI");
+  if(am)partes.push(am+" "+(am===1?"arquivo":"arquivos"));
+  alvo.textContent=partes.length?"— em uso nesta geração: "+partes.join(" e "):"— nada marcado para a próxima geração";
+  if($("resumo-outros"))$("resumo-outros").textContent=n
+    ? "— "+n+" "+(n===1?"arquivo guardado":"arquivos guardados")+(am?", "+am+" "+(am===1?"marcado":"marcados"):"")
+    : "— nenhum arquivo guardado";
 }
 
 /* ---------------- livros SESI ----------------
@@ -1887,9 +1890,7 @@ function jaElaboradas(){
 if(window.pdfjsLib){
   pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 }
-["fm-turma","fm-tipo"].forEach(function(c){
-  $(c).addEventListener("change",renderMateriais);
-});
+$("fm-tipo").addEventListener("change",renderMateriais);
 $("btn-exportar-biblioteca").addEventListener("click",function(){
   if(!materiais.length){msg("retorno-biblioteca","A biblioteca está vazia.","erro");return;}
   var blob=new Blob([JSON.stringify(materiais)],{type:"application/json"});
